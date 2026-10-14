@@ -7,6 +7,7 @@ interface Props {
   readonly layout: readonly LayoutNode[];
   readonly selectedId: string;
   readonly changed: (node: LayoutNode) => boolean;
+  readonly badges: ReadonlyMap<string, "error" | "warning" | "info">;
   readonly onSelect: (id: string) => void;
   readonly onHover: (node: LayoutNode | null) => void;
 }
@@ -28,7 +29,7 @@ function onTreeKey(e: KeyboardEvent<HTMLElement>) {
   e.preventDefault();
 }
 
-export function StructureTree({ edid, layout, selectedId, changed, onSelect, onHover }: Props) {
+export function StructureTree({ edid, layout, selectedId, changed, badges, onSelect, onHover }: Props) {
   return (
     <nav aria-label="EDID structure" className="card">
       <h2 className="section">Structure</h2>
@@ -48,6 +49,8 @@ export function StructureTree({ edid, layout, selectedId, changed, onSelect, onH
                     onFocus={() => onHover(node)}
                   >
                     <span className="t">{nodeLabel(edid, node)}</span>
+                    {badges.get(node.id) === "error" && <span className="badge err">error</span>}
+                    {badges.get(node.id) === "warning" && <span className="badge warn">warning</span>}
                     {changed(node) && <span className="badge changed">edited</span>}
                     {isRaw(edid, node.ref) && <span className="badge">raw</span>}
                   </button>
