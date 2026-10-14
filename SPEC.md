@@ -35,6 +35,8 @@ The tool succeeds when an engineer can state a raster, refresh, colour format an
 
 The primary user is an AV, LED or projection engineer who configures sources and processors and needs the EDID to be a deliberate choice, not a guess.
 
+**Typical setup (owner, 2026-10-14).** The user runs an NVIDIA RTX PRO (formerly Quadro) card in a media server or render node, and uses EDID Studio on a separate machine. EDIDs travel as files: exported from the workstation with the NVIDIA Control Panel (Workstation > View system topology > EDID > Export), uploaded or pasted into EDID Studio, edited, downloaded as `.txt` (or another format), copied back, and loaded by hand (EDID > Load, pick connectors, accept the warning). The tool never touches the workstation directly. GeForce cards have no EDID management, so they are out of scope for this route.
+
 1. **Strip down.** Import an EDID, keep only one mode, colour format and bit depth, export. This is the task that started the project.
 2. **Build from intent.** Create an EDID for a non-standard raster, for example 3840x1080 at 50 Hz, RGB, 10-bit, over HDMI 2.0, keeping a device's identity and name.
 3. **Diagnose.** Import an EDID from a file or a connected display and get a plain-language report of why a driver may choose 8-bit, 4:2:2 or 4:2:0.
@@ -306,10 +308,12 @@ Output files are never overwritten without `--force`. Hex output mirrors the sty
 
 The tool reads freely but writes to a system only after an explicit, previewed confirmation with a backup already stored.
 
-- **Read:** Windows registry EDID values under the display's device parameters, Linux `/sys/class/drm/*/edid`, macOS `ioreg`. Read-only, no elevation.
-- **Apply (later release):** every write shows the exact diff, stores the original EDID in the library first, and states how to roll back. Windows uses the EDID override mechanism that CRU uses (`TODO(verify)` key and format); Linux uses `drm.edid_firmware` with a file under the firmware directory. Neither is attempted without admin rights and a restart notice.
+- **Primary delivery: download, then load in the NVIDIA app.** Export produces a file the user carries to the workstation (section 3). The NVIDIA Control Panel accepts any file extension as long as the contents are a VESA EDID, and exports EDIDs as hex text in a `.txt` file. The exact text layout NVIDIA writes and the layouts it accepts are `TODO(verify)` against a real export (the Tessera fixtures are believed to be NVIDIA exports). Until verified, hex export mirrors the layout of the imported file, so a round trip through EDID Studio keeps NVIDIA's own layout. The export dialog shows the load steps and advises a reboot (or display re-plug) after loading, since the driver caches EDIDs. Linux workstations use the driver's `CustomEDID` X option with a file path (`TODO(verify)` accepted formats).
+- **Download names:** file names are built from the EDID's monitor name, which is untrusted text. They are reduced to letters, digits, `-`, `_` and `.`, kept short, and never a Windows reserved name (`CON`, `NUL`, `COM1` and so on).
+- **Read (optional, lower priority):** the tool usually runs on a different machine from the GPU, so live read is a convenience, not a workflow. Windows registry EDID values under the display's device parameters, Linux `/sys/class/drm/*/edid`, macOS `ioreg`. Read-only, no elevation.
+- **Apply (later release, optional; the NVIDIA Control Panel load covers the main route):** every write shows the exact diff, stores the original EDID in the library first, and states how to roll back. Windows uses the EDID override mechanism that CRU uses (`TODO(verify)` key and format); Linux uses `drm.edid_firmware` with a file under the firmware directory. Neither is attempted without admin rights and a restart notice.
 - **Driver caches:** GPU drivers cache EDIDs. The apply flow lists the steps needed to make a driver re-read them, and a verification step re-reads the live EDID and compares it byte for byte.
-- **Hardware targets:** most processors and EDID emulators take `.bin` or hex text. Device profiles record which format each device accepts.
+- **Hardware targets:** most processors and EDID emulators take `.bin` or hex text. Device profiles record which format each device accepts. The first profile is "NVIDIA Control Panel (RTX PRO / Quadro)": hex text, `.txt`.
 - **Privacy:** EDIDs contain serial numbers. The library is local; the export dialog offers to scrub the serial.
 - **Identity:** manufacturer and product IDs are editable. The UI marks EDIDs whose IDs are unchanged from their source so a copy is never mistaken for an original.
 - **Process safety:** external tools run with argument arrays, never shell strings; dependencies are pinned.
@@ -366,7 +370,7 @@ Build in this order, one milestone per pull request; a milestone is done only wh
 | M2 Timing and link | Timing engine, DTD limits, exact-refresh solver, VIC and DMT tables, link analyzer | Acceptance tests 2, 3, 4, 6, 9 pass |
 | M3 CLI and recipes | All CLI commands, operations, recipe runner | Acceptance test 1 passes |
 | M4 Web UI | Library, editor, wizard, timing lab, compare, export | Every screen in section 11 works offline |
-| M5 Platform I/O | Read adapters, then guarded Windows and Linux apply | Apply backs up, previews and verifies by re-reading |
+| M5 Platform I/O (optional) | Read adapters, then guarded Windows and Linux apply. Deprioritised: users load EDIDs through the NVIDIA Control Panel on a separate machine | Apply backs up, previews and verifies by re-reading |
 | M6 v1.1 formats | DisplayID, HDMI Forum SCDB, HDMI 2.1 rules | Fixtures for each new block round-trip |
 
 Save the block below as `CLAUDE.md` in the repo root, with this document as `SPEC.md`.
@@ -389,10 +393,11 @@ Save the block below as `CLAUDE.md` in the repo root, with this document as `SPE
 Five answers from the owner would settle the remaining design choices. Answers recorded 2026-10-14.
 
 - [x] Primary OS, and how do EDIDs reach the hardware: file upload to the processor or emulator, a Windows override, or both?
-  **Answer:** Linux and Windows; the macOS adapter is lower priority. Users bring EDIDs in by uploading a file or pasting a block, and the UI may become a public site (section 13, untrusted input). How finished EDIDs reach the hardware is still open.
+  **Answer:** Linux and Windows; the macOS adapter is lower priority. Users bring EDIDs in by uploading a file or pasting a block, and the UI may become a public site (section 13, untrusted input). Finished EDIDs are downloaded (usually `.txt`) and loaded by hand through the NVIDIA Control Panel on an RTX PRO / Quadro workstation, typically a separate machine (section 13).
 - [x] Which links matter first: HDMI 2.0 only, or also HDMI 2.1 FRL and DisplayPort?
   **Answer:** HDMI 2.0 first. DisplayPort and HDMI 2.1 FRL follow after it.
 - [x] Build order: CLI first as specified, or the web UI first?
   **Answer:** CLI first, as specified.
 - [ ] Which devices need presets, and which file formats does each accept?
+  **Partial answer:** the NVIDIA Control Panel on RTX PRO / Quadro cards comes first (hex `.txt`). Its exact text layout needs a real NVIDIA export to confirm. Other processors and emulators are still open.
 - [ ] Do you want multi-output sets (for example a mosaic) with distinct serials in the MVP rather than v1?

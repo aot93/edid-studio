@@ -16,7 +16,7 @@ export { EdidEncodeError, EdidExportError, EdidInputError, EdidParseError } from
 export type { InputRejection } from "./errors.ts";
 export { DEFAULT_HEX_STYLE, formatHex, parseHex } from "./hex.ts";
 export type { HexStyle, ParsedHex } from "./hex.ts";
-export { exportEdid, importEdid, importUpload } from "./io.ts";
+export { downloadFileName, exportEdid, importEdid, importUpload } from "./io.ts";
 export {
   checkUploadName,
   MAX_EDID_BYTES,

@@ -1,7 +1,7 @@
 // Import and export entry points. Base64, C array and .reg output arrive with
 // the CLI `convert` command (milestone M3).
 
-import { EDID_HEADER } from "./base-block.ts";
+import { EDID_HEADER, manufacturerId } from "./base-block.ts";
 import { bytesEqual, slice } from "./bytes.ts";
 import { assertExportable, checksumErrors, parseEdid, serializeEdid } from "./edid.ts";
 import { EdidInputError } from "./errors.ts";
@@ -85,4 +85,29 @@ export function exportEdid(edid: Edid, format: ExportFormat, style: HexStyle = D
   const bytes = serializeEdid(edid);
   assertExportable(bytes);
   return format === "binary" ? bytes : formatHex(bytes, style);
+}
+
+const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])$/i;
+
+/**
+ * A safe file name for downloading `edid`. Built from the monitor name
+ * descriptor (untrusted text) or else the manufacturer ID and product code,
+ * reduced to letters, digits, "-", "_" and ".", at most 64 characters, and
+ * never a Windows reserved device name. NVIDIA Control Panel loads any
+ * extension; ".txt" matches what it exports.
+ */
+export function downloadFileName(edid: Edid, format: ExportFormat): string {
+  const name = edid.base.descriptors.find((d) => d.kind === "text" && d.tag === 0xfc);
+  const raw =
+    name?.kind === "text"
+      ? name.text
+      : `${manufacturerId(edid.base.manufacturerCode)}-${edid.base.productCode.toString(16).padStart(4, "0")}`;
+  let stem = raw
+    .replace(/[^A-Za-z0-9._-]+/g, "-")
+    .replace(/-{2,}/g, "-")
+    .replace(/^[-.]+|[-.]+$/g, "")
+    .slice(0, 64)
+    .replace(/[-.]+$/, "");
+  if (stem === "" || WINDOWS_RESERVED.test(stem.split(".")[0] ?? "")) stem = `edid-${stem}`.replace(/-$/, "");
+  return `${stem}.${format === "binary" ? "bin" : "txt"}`;
 }
