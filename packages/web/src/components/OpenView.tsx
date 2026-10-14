@@ -5,6 +5,7 @@ import { SAMPLE_NAME, sampleBytes } from "../sample.ts";
 
 interface Props {
   readonly onLoaded: (imported: ImportedEdid, fileName: string) => void;
+  readonly onNew: () => void;
 }
 
 /** Only parse errors are shown as-is; their messages escape any input they quote. */
@@ -13,7 +14,7 @@ function describeError(e: unknown): string {
   return "This file could not be read as an EDID.";
 }
 
-export function OpenView({ onLoaded }: Props) {
+export function OpenView({ onLoaded, onNew }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [over, setOver] = useState(false);
   const [text, setText] = useState("");
@@ -113,6 +114,14 @@ export function OpenView({ onLoaded }: Props) {
             </button>
           </div>
         </div>
+      </div>
+
+      <p className="or">No EDID to start from?</p>
+      <div className="open-actions">
+        <button className="btn primary" onClick={onNew}>
+          Create a new EDID
+        </button>
+        <span className="hint">Pick the resolution, refresh, colour format and bit depth; nothing to upload.</span>
       </div>
 
       {error !== null && (

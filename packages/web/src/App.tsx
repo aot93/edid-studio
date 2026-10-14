@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { EdidEncodeError, EdidExportError } from "@edid-studio/core";
 import type { Edid, ImportedEdid } from "@edid-studio/core";
 import { ExportView } from "./components/ExportView.tsx";
+import { NewView } from "./components/NewView.tsx";
 import { OpenView } from "./components/OpenView.tsx";
 import { Workspace } from "./components/Workspace.tsx";
 import { applyEdit, newSession, undo } from "./session.ts";
@@ -9,7 +10,7 @@ import type { Session } from "./session.ts";
 import { applyTheme, loadTheme } from "./theme.ts";
 import type { Theme } from "./theme.ts";
 
-type View = "open" | "edit" | "export";
+type View = "open" | "new" | "edit" | "export";
 
 const NEXT_THEME: Record<Theme, Theme> = { system: "light", light: "dark", dark: "system" };
 
@@ -71,6 +72,9 @@ export function App() {
           <button className={`btn${view === "open" ? " on" : ""}`} onClick={() => setView("open")}>
             Open
           </button>
+          <button className={`btn${view === "new" ? " on" : ""}`} onClick={() => setView("new")}>
+            New
+          </button>
           <button className={`btn${view === "edit" ? " on" : ""}`} disabled={session === null} onClick={() => setView("edit")}>
             Editor
           </button>
@@ -84,8 +88,10 @@ export function App() {
       </header>
 
       <main>
-        {view === "open" || session === null ? (
-          <OpenView onLoaded={loaded} />
+        {view === "new" ? (
+          <NewView onCreated={loaded} />
+        ) : view === "open" || session === null ? (
+          <OpenView onLoaded={loaded} onNew={() => setView("new")} />
         ) : (
           <>
             <div className="toolbar">

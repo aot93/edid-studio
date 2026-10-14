@@ -10,10 +10,11 @@ quietly falls back, usually to 8-bit. EDID Studio says, for every advertised
 mode, whether it fits the link at the advertised format and depth, and builds
 EDIDs whose timings and colour flags agree with the link from the start.
 
-> **Status:** pre-alpha. M0 (parse, serialize, hex import and export, length
-> guard) is done. A first slice of the web UI (open, inspect, strip down,
-> export) is in progress; validation (M1) and the timing and link engine (M2)
-> come next.
+> **Status:** pre-alpha. M0 is done. The web UI can open, inspect, strip
+> down, build from scratch and export EDIDs, with a timing engine (exact
+> refresh, CVT, CVT-RB v1/v2, manual porches) and an HDMI link budget.
+> Acceptance tests 1 to 5, 8 and 9 pass; the rule engine (M1) and the CLI
+> commands (M3) are next.
 
 ## Documents
 

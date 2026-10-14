@@ -2,7 +2,11 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  addDetailedTiming,
   EdidEncodeError,
+  keepOnlyModes,
+  makePreferred,
+  setColor,
   importEdid,
   parseEdid,
   removeDataBlock,
@@ -108,6 +112,57 @@ describe("removing modes", () => {
     const out = removeDataBlock(dell, 0, i);
     expect(cta(out).dataBlocks.some((b) => b.kind === "hdmiForumVsdb")).toBe(false);
     expect(cta(out).dataBlocks).toHaveLength(cta(dell).dataBlocks.length - 1);
+    roundTrips(out);
+  });
+});
+
+describe("timing operations", () => {
+  const tessera = importEdid(readFileSync(join(CORPUS_DIR, "../fixtures/Tessera-EJE-test.txt"), "utf8")).edid;
+
+  it("keepOnlyModes strips every mode and leaves the HDMI capabilities", () => {
+    const out = keepOnlyModes(tessera);
+    expect(out.base.establishedTimings).toEqual([0, 0, 0]);
+    expect(out.base.standardTimings.every(([a, b]) => a === 1 && b === 1)).toBe(true);
+    expect(out.base.descriptors.some((d) => d.kind === "dtd")).toBe(false);
+    expect(cta(out).dataBlocks.map((b) => b.kind)).toEqual(["hdmiVsdb", "hdmiForumVsdb", "videoCapability"]);
+    expect(cta(out).dataBlocks.find((b) => b.kind === "hdmiVsdb")).toMatchObject({ tail: [0x00] });
+    roundTrips(out);
+  });
+
+  it("keepOnlyModes keeps listed VICs and their 4:2:0 flags", () => {
+    const out = keepOnlyModes(tessera, { vics: [96, 16] });
+    const vics = cta(out).dataBlocks.flatMap((b) => (b.kind === "video" ? b.svds.map((s) => s.vic) : []));
+    expect(vics).toEqual([96, 16]);
+    expect(cta(out).dataBlocks.find((b) => b.kind === "ycbcr420CapabilityMap")).toMatchObject({ bitmap: [0x01] });
+    roundTrips(out);
+  });
+
+  it("makePreferred swaps a timing into slot 0, keeping the old preferred", () => {
+    const dell = load("dell-p2415q-hdmi2.0");
+    const ctaDtd = cta(dell).descriptors.findIndex((d) => d.kind === "dtd");
+    const oldFirst = dell.base.descriptors[0];
+    const target = cta(dell).descriptors[ctaDtd];
+    const out = makePreferred(dell, { extension: 0, index: ctaDtd });
+    expect(out.base.descriptors[0]).toEqual(target);
+    expect(cta(out).descriptors[ctaDtd]).toEqual(oldFirst);
+    roundTrips(out);
+  });
+
+  it("addDetailedTiming fills a dummy slot, then the CTA block", () => {
+    const d = tessera.base.descriptors[0];
+    if (d?.kind !== "dtd") throw new Error("no DTD");
+    const once = addDetailedTiming(tessera, d);
+    expect(once.base.descriptors[1]).toEqual(d);
+    const twice = addDetailedTiming(once, d);
+    expect(cta(twice).descriptors).toEqual([d]);
+    roundTrips(twice);
+  });
+
+  it("setColor without 4:2:0 removes the 4:2:0 map and flags", () => {
+    const out = setColor(tessera, ["rgb", "ycbcr444"], [8, 10]);
+    expect(cta(out).dataBlocks.some((b) => b.kind === "ycbcr420CapabilityMap")).toBe(false);
+    expect(cta(out).dataBlocks.find((b) => b.kind === "hdmiForumVsdb")).toMatchObject({ dc30bit420: false, dc36bit420: false });
+    expect(cta(out).dataBlocks.find((b) => b.kind === "hdmiVsdb")).toMatchObject({ capabilities: { dc30bit: true, dc36bit: false, dcY444: true } });
     roundTrips(out);
   });
 });

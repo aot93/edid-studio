@@ -7,16 +7,23 @@ import {
   modeLabel,
   printable,
   removeDataBlock,
+  removeDescriptor,
   removeSvd,
-  setCtaYcbcr,
   setHdmiDeepColour,
+  makePreferred,
   setHf420DeepColour,
   setMonitorName,
 } from "@edid-studio/core";
-import type { Descriptor, Edid, LayoutNode } from "@edid-studio/core";
+import type { DetailedTimingDescriptor, Descriptor, Edid, LayoutNode } from "@edid-studio/core";
 import { ctaAt, dataBlockAt, descriptorAt, hex, nodeLabel, svdLabel } from "../model-view.ts";
+import { ColourForm, EstablishedTimingsEditor, RangeLimitsEditor, StandardTimingsEditor } from "./BaseEditors.tsx";
 
 export type EditFn = (label: string, edit: (edid: Edid) => Edid) => string | null;
+
+/** Where a timing edit lands: a new timing, or a replacement for an existing DTD. */
+export type TimingTarget =
+  | { readonly mode: "add" }
+  | { readonly mode: "replace"; readonly where: { readonly extension?: number; readonly index: number }; readonly dtd: DetailedTimingDescriptor };
 
 interface Props {
   readonly edid: Edid;
@@ -24,6 +31,7 @@ interface Props {
   readonly node: LayoutNode;
   /** Applies an edit; returns an error message, or null on success. */
   readonly onEdit: EditFn;
+  readonly onTiming: (target: TimingTarget) => void;
 }
 
 function Fields({ rows }: { readonly rows: readonly (readonly [string, ReactNode])[] }) {
@@ -62,7 +70,16 @@ function videoInput(edid: Edid): string {
   return `Digital, ${depth}, ${INTERFACES[v & 0x0f] ?? `interface 0x${hex(v & 0x0f)}`}`;
 }
 
-function DescriptorView({ d, onEdit }: { readonly d: Descriptor; readonly onEdit: EditFn }) {
+interface DescriptorProps {
+  readonly d: Descriptor;
+  readonly edid: Edid;
+  readonly where: { readonly extension?: number; readonly index: number };
+  readonly onEdit: EditFn;
+  readonly onTiming: (target: TimingTarget) => void;
+  readonly edit: (label: string, f: (e: Edid) => Edid) => void;
+}
+
+function DescriptorView({ d, edid, where, onEdit, onTiming, edit }: DescriptorProps) {
   const [name, setName] = useState(d.kind === "text" ? d.text : "");
   const [error, setError] = useState<string | null>(null);
 
@@ -70,6 +87,7 @@ function DescriptorView({ d, onEdit }: { readonly d: Descriptor; readonly onEdit
     case "dtd": {
       const t = describeDtd(d);
       return (
+        <>
         <Fields
           rows={[
             ["Mode", modeLabel(t)],
@@ -82,6 +100,23 @@ function DescriptorView({ d, onEdit }: { readonly d: Descriptor; readonly onEdit
             ["Refresh (exact)", `${t.refreshHz.toFixed(6)} Hz`],
           ]}
         />
+        <div className="row">
+          <button className="btn small" onClick={() => onTiming({ mode: "replace", where, dtd: d })}>
+            Edit timing
+          </button>
+          {!(where.extension === undefined && where.index === 0) && (
+            <button
+              className="btn small"
+              onClick={() => edit(`Make ${modeLabel(t)} the preferred timing`, (e) => makePreferred(e, where))}
+            >
+              Make preferred
+            </button>
+          )}
+          <button className="btn small danger" onClick={() => edit(`Remove timing ${modeLabel(t)}`, (e) => removeDescriptor(e, where))}>
+            Remove timing
+          </button>
+        </div>
+        </>
       );
     }
     case "text":
@@ -108,24 +143,27 @@ function DescriptorView({ d, onEdit }: { readonly d: Descriptor; readonly onEdit
     case "rangeLimits":
       return (
         <>
-          <Fields
-            rows={[
-              ["Vertical", `${d.minVerticalHz} to ${d.maxVerticalHz} Hz`],
-              ["Horizontal", `${d.minHorizontalKHz} to ${d.maxHorizontalKHz} kHz`],
-              ["Max pixel clock", `${d.maxPixelClock10MHz * 10} MHz`],
-            ]}
-          />
           {d.offsetFlags !== 0 && <p className="note">Rate offsets are set (EDID 1.4): add 255 to the flagged limits.</p>}
+          <RangeLimitsEditor key={JSON.stringify(d)} edid={edid} d={d} edit={edit} />
         </>
       );
     case "dummy":
-      return <p className="note">An unused descriptor slot. Setting a monitor name can use it.</p>;
+      return (
+        <>
+          <p className="note">An unused descriptor slot. It can hold a timing, range limits or a monitor name.</p>
+          <div className="row">
+            <button className="btn small" onClick={() => onTiming({ mode: "add" })}>
+              Add a timing
+            </button>
+          </div>
+        </>
+      );
     case "raw":
       return <p className="note">Kept byte for byte; not decoded.</p>;
   }
 }
 
-export function Inspector({ edid, bytes, node, onEdit }: Props) {
+export function Inspector({ edid, bytes, node, onEdit, onTiming }: Props) {
   const [error, setError] = useState<string | null>(null);
   const r = node.ref;
   const edit = (label: string, f: (e: Edid) => Edid) => setError(onEdit(label, f));
@@ -156,18 +194,19 @@ export function Inspector({ edid, bytes, node, onEdit }: Props) {
     );
   } else if (r.type === "baseDescriptor" || r.type === "ctaDescriptor") {
     const d = descriptorAt(edid, r);
-    if (d) body = <DescriptorView key={node.id + JSON.stringify(d)} d={d} onEdit={onEdit} />;
+    const where = r.type === "baseDescriptor" ? { index: r.index } : { extension: r.extension, index: r.index };
+    if (d) body = <DescriptorView key={node.id + JSON.stringify(d)} d={d} edid={edid} where={where} onEdit={onEdit} onTiming={onTiming} edit={edit} />;
+  } else if (r.type === "standardTimings") {
+    body = <StandardTimingsEditor edid={edid} edit={edit} />;
+  } else if (r.type === "establishedTimings") {
+    body = <EstablishedTimingsEditor edid={edid} edit={edit} />;
   } else if (r.type === "ctaHeader") {
     const cta = ctaAt(edid, r.extension);
     if (cta) {
       body = (
         <>
           <Fields rows={[["Revision", String(cta.revision)], ["Underscan", yesNo(cta.underscan)], ["Basic audio", yesNo(cta.basicAudio)], ["Native DTDs", String(cta.nativeDtdCount)]]} />
-          <div className="sub">Colour formats besides RGB</div>
-          <div className="checks">
-            <Check label="YCbCr 4:4:4" checked={cta.ycbcr444} onChange={(v) => edit(`${v ? "Allow" : "Remove"} YCbCr 4:4:4`, (e) => setCtaYcbcr(e, { ycbcr444: v }))} />
-            <Check label="YCbCr 4:2:2" checked={cta.ycbcr422} onChange={(v) => edit(`${v ? "Allow" : "Remove"} YCbCr 4:2:2`, (e) => setCtaYcbcr(e, { ycbcr422: v }))} />
-          </div>
+          <ColourForm key={JSON.stringify([cta.ycbcr444, cta.ycbcr422, cta.dataBlocks.length])} edid={edid} edit={edit} />
         </>
       );
     }

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { DEFAULT_HEX_STYLE, downloadFileName, EdidExportError, exportEdid } from "@edid-studio/core";
+import { downloadFileName, EdidExportError, exportEdid, ONE_LINE_HEX_STYLE } from "@edid-studio/core";
 import type { ExportFormat } from "@edid-studio/core";
 import { saveFile } from "../download.ts";
 import { current } from "../session.ts";
@@ -10,7 +10,7 @@ export function ExportView({ session }: { readonly session: Session }) {
   const mirror = session.source.format === "hex";
   const [format, setFormat] = useState<ExportFormat>("hex");
   const [copied, setCopied] = useState(false);
-  const style = mirror ? session.source.hexStyle : DEFAULT_HEX_STYLE;
+  const style = mirror ? session.source.hexStyle : ONE_LINE_HEX_STYLE;
 
   const result = useMemo(() => {
     try {
@@ -41,8 +41,8 @@ export function ExportView({ session }: { readonly session: Session }) {
               <span>
                 <strong>Hex text (.txt)</strong>
                 <small>
-                  {mirror ? "Same layout as the file you imported." : "16 bytes per line."} The NVIDIA Control Panel exports and loads
-                  this form.
+                  {mirror ? "Same layout as the file you imported." : "One line of lowercase bytes, like the Tessera files."} The NVIDIA
+                  Control Panel exports and loads hex text.
                 </small>
               </span>
             </label>
