@@ -1,0 +1,8 @@
+{
+  "name": "@edid-studio/edidtool",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": { "edidtool": "./src/cli.ts" },
+  "dependencies": { "@edid-studio/core": "workspace:*" }
+}

@@ -1,0 +1,6 @@
+node_modules/
+.tsbuild/
+dist/
+coverage/
+*.tsbuildinfo
+.claude/settings.local.json
