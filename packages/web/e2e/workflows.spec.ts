@@ -65,6 +65,8 @@ test("creates an EDID without uploading anything", async ({ page }) => {
   expect(checksumErrors).toEqual([]);
   expect([edid.base.version, edid.base.revision]).toEqual([1, 3]);
   expect(manufacturerId(edid.base.manufacturerCode)).toBe("VYV");
+  // One mode only: no established timings unless 640x480 is asked for.
+  expect(edid.base.establishedTimings).toEqual([0, 0, 0]);
   const cta = edid.extensions[0];
   expect(cta?.kind === "cta" && cta.dataBlocks.find((b) => b.kind === "hdmiVsdb")).toMatchObject({ capabilities: { dc30bit: true, dc36bit: false } });
 });

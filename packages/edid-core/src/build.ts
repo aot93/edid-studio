@@ -48,13 +48,19 @@ export interface BuildIntent {
   readonly link: Link;
   readonly formats: readonly ColourFormat[];
   readonly depths: readonly Depth[];
+  /**
+   * List 640x480 @ 60 Hz as an established timing. CTA-861 requires it and
+   * edid-decode fails without it, but it is one more mode a source may use,
+   * so it is off unless asked for.
+   */
+  readonly include640x480?: boolean;
 }
 
 /**
  * Builds a complete EDID 1.3:
  * - digital input, sRGB primaries and flag, no image size (never invented);
- * - 640x480 @ 60 Hz as an established timing (CTA-861 requires it; it is far
- *   too small for a driver to prefer), and no standard timings;
+ * - no standard timings, and no established timings unless include640x480
+ *   asks for 640x480 @ 60 Hz;
  * - descriptors: preferred timing, range limits (auto; default GTF, since
  *   "range limits only" is EDID 1.4), monitor name, and a dummy or a second
  *   timing;
@@ -98,8 +104,8 @@ export function buildEdid(intent: BuildIntent): Edid {
       gamma: 120, // 2.2: stored as gamma x 100 - 100
       features,
       chromaticity: encodeChromaticity(SRGB),
-      // 640x480 @ 60 Hz: block 0 byte 0x23 bit 5.
-      establishedTimings: [0x20, 0, 0],
+      // 640x480 @ 60 Hz is block 0 byte 0x23 bit 5.
+      establishedTimings: [intent.include640x480 ? 0x20 : 0, 0, 0],
       standardTimings: new Array(8).fill([0x01, 0x01]),
       descriptors: baseDescriptors,
     },

@@ -26,6 +26,8 @@ test("shows the VYV logo and the headline", async ({ page }) => {
   await expect(logo).toBeVisible();
   expect(await logo.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(271);
   await expect(page.getByRole("heading", { name: "Make the GPU pick the mode you want" })).toBeVisible();
+  const icon = await page.locator('link[rel="icon"][sizes="32x32"]').getAttribute("href");
+  expect((await page.request.get(new URL(icon ?? "", page.url()).href)).headers()["content-type"]).toBe("image/png");
 });
 
 test("serves a Content Security Policy that blocks network access", async ({ page }) => {

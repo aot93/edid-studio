@@ -17,6 +17,7 @@ export function NewView({ onCreated }: Props) {
   const [ycc444, setYcc444] = useState(false);
   const [ycc422, setYcc422] = useState(false);
   const [depths, setDepths] = useState<readonly Depth[]>([8, 10]);
+  const [with640, setWith640] = useState(false);
   const [timing, setTiming] = useState<TimingResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -42,6 +43,7 @@ export function NewView({ onCreated }: Props) {
         link,
         formats: dvi ? ["rgb"] : ["rgb", ...(ycc444 ? (["ycbcr444"] as const) : []), ...(ycc422 ? (["ycbcr422"] as const) : [])],
         depths: dvi ? [8] : depths,
+        include640x480: with640,
       });
       // Re-import the serialized bytes so the session starts from exactly what will be exported.
       const imported = importEdid(serializeEdid(edid));
@@ -134,6 +136,19 @@ export function NewView({ onCreated }: Props) {
             <p className="hint">
               Only tick what you want the GPU to use. Unticked depths are not advertised, so the driver cannot pick them. 4:2:0 applies only to
               standard VIC modes, not to a custom timing.
+            </p>
+          </div>
+
+          <div className="card">
+            <h2 className="section">Other modes</h2>
+            <div className="checks">
+              <label>
+                <input type="checkbox" checked={with640} onChange={(e) => setWith640(e.target.checked)} /> Also list 640x480 @ 60 Hz
+              </label>
+            </div>
+            <p className="hint">
+              Off by default, so the EDID holds your timing and nothing else. CTA-861 expects 640x480 and edid-decode reports its absence as a
+              failure; turn it on if a source or processor refuses the EDID without it.
             </p>
           </div>
 

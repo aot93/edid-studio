@@ -48,8 +48,17 @@ describe("buildEdid", () => {
     expect(cta.dataBlocks.some((b) => b.kind === "video")).toBe(false);
     // EDID 1.3 as HDMI requires: digital input, no depth field there.
     expect([edid.base.version, edid.base.revision, edid.base.videoInput]).toEqual([1, 3, 0x80]);
-    expect(edid.base.establishedTimings).toEqual([0x20, 0, 0]);
+    // No 640x480 unless asked for: the only mode is the one requested.
+    expect(edid.base.establishedTimings).toEqual([0, 0, 0]);
     expect(edid.base.descriptors.map((d) => d.kind)).toEqual(["dtd", "rangeLimits", "text", "dummy"]);
+  });
+
+  it("adds 640x480 @ 60 Hz only on request, and widens the range limits to cover it", () => {
+    const edid = buildEdid({ ...intent, include640x480: true });
+    expect(edid.base.establishedTimings).toEqual([0x20, 0, 0]);
+    expect(edid.base.descriptors.find((d) => d.kind === "rangeLimits")).toMatchObject({ minVerticalHz: 50, maxVerticalHz: 60, minHorizontalKHz: 31 });
+    const plain = buildEdid(intent);
+    expect(plain.base.descriptors.find((d) => d.kind === "rangeLimits")).toMatchObject({ minVerticalHz: 50, maxVerticalHz: 50, minHorizontalKHz: 110 });
   });
 
   it("leaves out the HDMI Forum VSDB when 340 MHz is enough", () => {
