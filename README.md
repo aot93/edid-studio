@@ -10,8 +10,8 @@ quietly falls back, usually to 8-bit. EDID Studio says, for every advertised
 mode, whether it fits the link at the advertised format and depth, and builds
 EDIDs whose timings and colour flags agree with the link from the start.
 
-> **Status:** pre-alpha. The repository holds the spec and the project
-> skeleton; milestone M0 (parse, serialize, hex import and export) is next.
+> **Status:** pre-alpha. Milestone M0 (parse, serialize, hex import and
+> export, length guard) is in place; M1 (validation) is next.
 
 ## Documents
 
@@ -26,6 +26,7 @@ EDIDs whose timings and colour flags agree with the link from the start.
 | `packages/edid-core` | Pure TypeScript library: parse, model, serialize, timing, link analysis, validation, operations. Zero runtime dependencies. |
 | `packages/edidtool` | Node CLI over the core |
 | `tests/fixtures` | Reference EDIDs from the Tessera SX40 case |
+| `tests/corpus` | Third-party EDIDs for round-trip and decoder tests |
 | `design` | Design tokens shared by the web UI and HTML reports |
 
 The web UI (milestone M4) will be added as `packages/web`.
