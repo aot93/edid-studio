@@ -3,7 +3,8 @@
 // one long hex string, and edid-decode's "edid-decode (hex):" section.
 // Anything else on a data line is an error, never skipped silently.
 
-import { EdidParseError } from "./errors.ts";
+import { EdidInputError, EdidParseError } from "./errors.ts";
+import { MAX_EDID_BYTES, quoteForMessage } from "./safety.ts";
 
 /** How hex text is laid out, so an export can mirror its input. */
 export interface HexStyle {
@@ -38,6 +39,9 @@ const HEXDUMP_C = /^[0-9a-f]{8}\s+((?:[0-9a-f]{2}\s+)*[0-9a-f]{2})\s+\|.*\|\s*$/
 const XXD = /^[0-9a-f]{7,8}: ([0-9a-f ]{1,40})(?: .*)?$/i;
 const OFFSET_PREFIX = /^\s*(?:0x)?[0-9a-f]+\s*[:|]\s*/i;
 
+/** Dump formats are only tried on lines this short; real xxd and hexdump lines are about 80. */
+const MAX_DUMP_LINE = 256;
+
 interface DataLine {
   readonly number: number;
   readonly text: string;
@@ -63,19 +67,20 @@ export function parseHex(input: string): ParsedHex {
     lineOffset += text.slice(0, open).split("\n").length - 1;
     text = text.slice(open + 1, close);
   }
-  text = text.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
+  text = blankBlockComments(text);
 
   const rawLines = text.split("\n");
-  const isHexdump = rawLines.some((l) => HEXDUMP_C.test(l));
+  const isHexdump = rawLines.some((l) => l.length <= MAX_DUMP_LINE && HEXDUMP_C.test(l));
   const lines: DataLine[] = [];
   rawLines.forEach((raw, i) => {
     // Dump lines first: their ASCII column may contain "#" or "//".
-    const hexdump = HEXDUMP_C.exec(raw);
+    const short = raw.length <= MAX_DUMP_LINE;
+    const hexdump = short ? HEXDUMP_C.exec(raw) : null;
     if (hexdump?.[1] !== undefined) {
       lines.push({ number: i + 1 + lineOffset, text: hexdump[1], dump: true });
       return;
     }
-    const xxd = XXD.exec(raw);
+    const xxd = short ? XXD.exec(raw) : null;
     if (xxd?.[1] !== undefined && /^[0-9a-f]{7,8}: [0-9a-f]{4} /i.test(raw)) {
       lines.push({ number: i + 1 + lineOffset, text: xxd[1].replace(/ /g, ""), dump: true });
       return;
@@ -126,16 +131,22 @@ export function parseHex(input: string): ParsedHex {
       if (body.length !== token.length) prefixed++;
       else unprefixed++;
       if (!/^[0-9a-f]+$/i.test(body) || body.length % 2 !== 0) {
-        throw new EdidParseError(`line ${line.number}: "${token}" is not a hex byte`);
+        throw new EdidParseError(`line ${line.number}: ${quoteForMessage(token)} is not a hex byte`);
       }
       if (body.length > 2) {
         if (body.length !== token.length) {
-          throw new EdidParseError(`line ${line.number}: "${token}" is more than one byte`);
+          throw new EdidParseError(`line ${line.number}: ${quoteForMessage(token)} is more than one byte`);
         }
         compact = true;
       }
       if (/[A-F]/.test(body)) upper++;
       if (/[a-f]/.test(body)) lower++;
+      if (bytes.length + body.length / 2 > MAX_EDID_BYTES) {
+        throw new EdidInputError(
+          "too-many-bytes",
+          `more than ${MAX_EDID_BYTES} bytes of hex; the largest EDID is 256 blocks of 128 bytes`,
+        );
+      }
       for (let i = 0; i < body.length; i += 2) {
         bytes.push(parseInt(body.slice(i, i + 2), 16));
         count++;
@@ -161,6 +172,20 @@ export function parseHex(input: string): ParsedHex {
         blankLineBetweenBlocks: blankBetweenBlocks,
       };
   return { bytes: Uint8Array.from(bytes), style };
+}
+
+/** Replaces each C block comment with spaces, keeping line breaks. Linear time. */
+function blankBlockComments(text: string): string {
+  let out = "";
+  let from = 0;
+  for (;;) {
+    const open = text.indexOf("/*", from);
+    if (open === -1) return out + text.slice(from);
+    const close = text.indexOf("*/", open + 2);
+    if (close === -1) throw new EdidParseError("a /* comment is never closed");
+    out += text.slice(from, open) + text.slice(open, close + 2).replace(/[^\n]/g, " ");
+    from = close + 2;
+  }
 }
 
 /** The hex lines after "edid-decode (hex):", up to the first line that is neither hex nor blank. */

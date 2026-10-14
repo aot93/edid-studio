@@ -17,3 +17,24 @@ export class EdidEncodeError extends Error {
 export class EdidExportError extends Error {
   override name = "EdidExportError";
 }
+
+export type InputRejection =
+  | "too-large"
+  | "too-many-bytes"
+  | "not-text"
+  | "known-file-type"
+  | "bad-file-name"
+  | "unsupported-extension";
+
+/**
+ * Input refused before parsing: too large, the wrong kind of file, or a bad
+ * file name. `reason` is stable, for UI messages and tests.
+ */
+export class EdidInputError extends EdidParseError {
+  override name = "EdidInputError";
+  readonly reason: InputRejection;
+  constructor(reason: InputRejection, message: string) {
+    super(message);
+    this.reason = reason;
+  }
+}

@@ -29,7 +29,7 @@ The tool succeeds when an engineer can state a raster, refresh, colour format an
 
 - A display driver, firmware or signal generator. The tool produces data; it does not drive a link.
 - A replacement for runtime tools like CRU. Applying an EDID to a live system is a later, guarded feature.
-- Cloud features. The library and all processing stay local.
+- Cloud features. The library and all processing stay local. The web UI may be served as a public static site, but EDIDs are processed in the visitor's browser and never sent to a server (section 13).
 
 ## Users and core workflows
 
@@ -313,6 +313,14 @@ The tool reads freely but writes to a system only after an explicit, previewed c
 - **Privacy:** EDIDs contain serial numbers. The library is local; the export dialog offers to scrub the serial.
 - **Identity:** manufacturer and product IDs are editable. The UI marks EDIDs whose IDs are unchanged from their source so a copy is never mistaken for an original.
 - **Process safety:** external tools run with argument arrays, never shell strings; dependencies are pinned.
+- **Untrusted input:** EDIDs arrive as an uploaded file or a pasted block (owner decision, 2026-10-14), and the UI may be published as a public site, so every input is hostile until checked. The core enforces, before and during parsing:
+  - a 512 KiB cap on any file or paste, and a 32 KiB cap (256 blocks) on decoded bytes;
+  - upload names: 1 to 255 characters, no path separators or control characters, extension one of `.bin .edid .dat .raw .txt .hex .h .c` or none;
+  - content sniffing: common non-EDID types (images, PDFs, archives, executables) are named and refused, and text must be printable ASCII, UTF-8 or UTF-16;
+  - linear-time parsing with no unbounded regular expressions, so a crafted paste cannot hang the page;
+  - error messages that never echo raw input: tokens are escaped and cut short;
+  - every failure is a typed `EdidParseError`, never a crash; a seeded fuzz test enforces this on random and corrupted input.
+- **Public deployment (M4):** the site is static, processes EDIDs only in the browser, and makes no network calls after load. It serves a strict Content Security Policy (`default-src 'self'`, no inline script, no `eval`), `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`. EDID text fields (names, serials) are untrusted and are inserted only as text, never as HTML. Uploaded files are never stored server-side; the browser library (IndexedDB) stays on the visitor's machine.
 
 ## Lessons learned and reference fixtures
 
@@ -381,7 +389,7 @@ Save the block below as `CLAUDE.md` in the repo root, with this document as `SPE
 Five answers from the owner would settle the remaining design choices. Answers recorded 2026-10-14.
 
 - [x] Primary OS, and how do EDIDs reach the hardware: file upload to the processor or emulator, a Windows override, or both?
-  **Answer:** Linux and Windows; the macOS adapter is lower priority. How EDIDs reach the hardware is still open.
+  **Answer:** Linux and Windows; the macOS adapter is lower priority. Users bring EDIDs in by uploading a file or pasting a block, and the UI may become a public site (section 13, untrusted input). How finished EDIDs reach the hardware is still open.
 - [x] Which links matter first: HDMI 2.0 only, or also HDMI 2.1 FRL and DisplayPort?
   **Answer:** HDMI 2.0 first. DisplayPort and HDMI 2.1 FRL follow after it.
 - [x] Build order: CLI first as specified, or the web UI first?

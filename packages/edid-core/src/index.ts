@@ -12,9 +12,17 @@ export {
   serializeEdid,
   structuralProblems,
 } from "./edid.ts";
-export { EdidEncodeError, EdidExportError, EdidParseError } from "./errors.ts";
+export { EdidEncodeError, EdidExportError, EdidInputError, EdidParseError } from "./errors.ts";
+export type { InputRejection } from "./errors.ts";
 export { DEFAULT_HEX_STYLE, formatHex, parseHex } from "./hex.ts";
 export type { HexStyle, ParsedHex } from "./hex.ts";
-export { exportEdid, importEdid } from "./io.ts";
+export { exportEdid, importEdid, importUpload } from "./io.ts";
+export {
+  checkUploadName,
+  MAX_EDID_BYTES,
+  MAX_INPUT_BYTES,
+  printable,
+  UPLOAD_EXTENSIONS,
+} from "./safety.ts";
 export type { ExportFormat, ImportedEdid } from "./io.ts";
 export type * from "./model.ts";
