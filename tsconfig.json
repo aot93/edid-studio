@@ -1,8 +1,17 @@
 {
   "files": [],
   "references": [
-    { "path": "packages/edid-core" },
-    { "path": "packages/edid-core/test" },
-    { "path": "packages/edidtool" }
+    {
+      "path": "packages/edid-core"
+    },
+    {
+      "path": "packages/edid-core/test"
+    },
+    {
+      "path": "packages/edidtool"
+    },
+    {
+      "path": "packages/web"
+    }
   ]
 }

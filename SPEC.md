@@ -328,7 +328,7 @@ The tool reads freely but writes to a system only after an explicit, previewed c
 
 ## Lessons learned and reference fixtures
 
-Six findings from the Tessera SX40 case drive the design; each is labelled by how well it is established.
+Eight findings from the Tessera SX40 case drive the design; each is labelled by how well it is established.
 
 1. **Blanking counts (verified by arithmetic).** 4K50 CEA timing needs 742.5 MHz of TMDS clock for 10-bit RGB, above HDMI 2.0's 600 MHz. The same raster with 160-pixel horizontal blanking needs 555 MHz.
 2. **A DTD cannot hold VIC 96 (verified by field widths).** Its front porch is 1056 and the field stops at 1023, so the standard 4K50 timing exists only as a VIC.
@@ -336,6 +336,8 @@ Six findings from the Tessera SX40 case drive the design; each is labelled by ho
 4. **Unwanted depths should be removed explicitly (observed).** Leaving 12-bit flags in place gives a driver room to choose them.
 5. **Removing the standard VIC fixed it (observed, mechanism unconfirmed).** With only the reduced-blanking timing left, the owner's setup worked. Hypothesis: the driver, once a mosaic was configured, chose the standard timing, which cannot carry 10-bit RGB. This must stay labelled a hypothesis until tested.
 6. **Hand-copied hex failed (process).** Copying hex by hand produced files of 335, 258 and 255 bytes before a correct 256-byte one. All files must be produced by code and length-checked.
+7. **The working file breaks two rules NVIDIA ignores (verified with edid-decode, 2026-10-14).** It is EDID 1.3 but uses "range limits only" (a 1.4 feature), and it lacks the sRGB flag its sRGB chromaticity implies. The NVIDIA Control Panel accepted it. EDIDs built from scratch follow the rules instead: EDID 1.3 (the HDMI specification requires it), default-GTF range limits and the sRGB flag. 640x480 @ 60 Hz, which CTA-861 requires, is optional and off by default (owner decision, 2026-10-14) so a built EDID can hold one mode only; without it `edid-decode --check` reports one failure, with it the EDID passes.
+8. **File layout (observed).** The owner's `.txt` files are one line of lowercase, space-separated bytes. New EDIDs export in that layout; imported files keep their own. Whether this is NVIDIA's export layout is `TODO(verify)`.
 
 Reference fixtures, supplied by the owner, go in `tests/fixtures/`:
 
@@ -344,6 +346,7 @@ Reference fixtures, supplied by the owner, go in `tests/fixtures/`:
 | `Tessera-EJE-test.txt` | Original; 10-bit fell back to 8-bit | 4K60 DTD at 594 MHz, 23 VICs, 12-bit flags, 4:2:0 map | 32 / 2c |
 | `Tessera-EJE-4K50-10bit.txt` | First rebuild; not confirmed | 4K50 reduced-blanking DTD plus VIC 96, YCbCr allowed, 10-bit | bf / 05 |
 | `Tessera-EJE-4K50-10bit-RGB.txt` | Reported working | 4K50 reduced-blanking DTD only, RGB only, 10-bit only | bf / d6 |
+| `Tessera-SX40.txt` | Supplied 2026-10-14, status not stated | Original base block; CTA keeps only VICs 97 and 96 | 32 / fe |
 
 ## Acceptance tests
 
@@ -361,7 +364,7 @@ The MVP is accepted when these nine tests pass in CI.
 
 ## Milestones and Claude Code working agreement
 
-Build in this order, one milestone per pull request; a milestone is done only when its test gate passes.
+Build in this order, one milestone per pull request; a milestone is done only when its test gate passes. Owner decision (2026-10-14): after M0, start the web UI before M1 to M3. Its first slice (open, editor, export, strip-down edits) uses only what the core already has; screens that need validation, the timing engine or the link analyzer wait for those milestones.
 
 | Milestone | Scope | Done when |
 | --- | --- | --- |

@@ -3,8 +3,18 @@
   "compilerOptions": {
     "rootDir": "..",
     "outDir": "../../../.tsbuild/edid-core-test",
-    "types": ["node"]
+    "types": [
+      "node"
+    ],
+    "resolveJsonModule": true
   },
-  "include": ["."],
-  "references": [{ "path": ".." }]
+  "include": [
+    ".",
+    "./data/*.json"
+  ],
+  "references": [
+    {
+      "path": ".."
+    }
+  ]
 }

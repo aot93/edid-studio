@@ -10,8 +10,11 @@ quietly falls back, usually to 8-bit. EDID Studio says, for every advertised
 mode, whether it fits the link at the advertised format and depth, and builds
 EDIDs whose timings and colour flags agree with the link from the start.
 
-> **Status:** pre-alpha. Milestone M0 (parse, serialize, hex import and
-> export, length guard) is in place; M1 (validation) is next.
+> **Status:** pre-alpha. M0 is done. The web UI can open, inspect, strip
+> down, build from scratch and export EDIDs, with a timing engine (exact
+> refresh, CVT, CVT-RB v1/v2, manual porches) and an HDMI link budget.
+> Acceptance tests 1 to 5, 8 and 9 pass; the rule engine (M1) and the CLI
+> commands (M3) are next.
 
 ## Documents
 
@@ -25,11 +28,10 @@ EDIDs whose timings and colour flags agree with the link from the start.
 | --- | --- |
 | `packages/edid-core` | Pure TypeScript library: parse, model, serialize, timing, link analysis, validation, operations. Zero runtime dependencies. |
 | `packages/edidtool` | Node CLI over the core |
+| `packages/web` | Web UI (React and Vite), static and browser-only |
 | `tests/fixtures` | Reference EDIDs from the Tessera SX40 case |
 | `tests/corpus` | Third-party EDIDs for round-trip and decoder tests |
 | `design` | Design tokens shared by the web UI and HTML reports |
-
-The web UI (milestone M4) will be added as `packages/web`.
 
 ## Development
 
@@ -41,7 +43,19 @@ pnpm test
 pnpm lint
 pnpm typecheck
 pnpm cli -- --help
+pnpm dev        # web UI at http://localhost:5173
+pnpm build      # static site in packages/web/dist
+pnpm e2e        # build, then browser tests (Playwright)
 ```
+
+## Deploying the web UI
+
+`pnpm build` writes a static site to `packages/web/dist` that any static host
+can serve. EDIDs are processed in the visitor's browser and never uploaded.
+The page carries a Content Security Policy in a meta tag; hosts that read
+`_headers` (Cloudflare Pages, Netlify) also get `frame-ancestors`, `nosniff`
+and the other headers from `packages/web/public/_headers`. Elsewhere, set
+those headers in the host's configuration.
 
 ## Milestones
 

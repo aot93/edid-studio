@@ -30,6 +30,20 @@ export const DEFAULT_HEX_STYLE: HexStyle = {
   blankLineBetweenBlocks: false,
 };
 
+/**
+ * One line of lowercase bytes separated by spaces: the layout of the
+ * owner's Tessera .txt files, which the NVIDIA Control Panel loads.
+ * TODO(verify): confirm against a file exported by the NVIDIA Control Panel.
+ */
+export const ONE_LINE_HEX_STYLE: HexStyle = {
+  uppercase: false,
+  prefix: "",
+  separator: " ",
+  bytesPerLine: 0,
+  trailingSeparator: false,
+  blankLineBetweenBlocks: false,
+};
+
 export interface ParsedHex {
   readonly bytes: Uint8Array;
   readonly style: HexStyle;

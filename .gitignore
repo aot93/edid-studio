@@ -4,3 +4,5 @@ dist/
 coverage/
 *.tsbuildinfo
 .claude/settings.local.json
+test-results/
+playwright-report/
