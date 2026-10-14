@@ -1,0 +1,9 @@
+# Security headers for static hosts that read _headers (Cloudflare Pages,
+# Netlify). Keep the CSP in step with vite.config.ts. SPEC.md section 13.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  X-Frame-Options: DENY
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), usb=(), serial=(), hid=()
+  Cross-Origin-Opener-Policy: same-origin

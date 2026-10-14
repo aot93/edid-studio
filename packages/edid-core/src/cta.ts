@@ -142,7 +142,7 @@ function parseTypedDataBlock(bytes: readonly number[]): DataBlock | undefined {
   return undefined;
 }
 
-function serializeDataBlock(block: DataBlock): number[] {
+export function serializeDataBlock(block: DataBlock): number[] {
   switch (block.kind) {
     case "video":
       return withHeader(TAG_VIDEO, block.svds.map(encodeSvd));

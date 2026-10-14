@@ -361,7 +361,7 @@ The MVP is accepted when these nine tests pass in CI.
 
 ## Milestones and Claude Code working agreement
 
-Build in this order, one milestone per pull request; a milestone is done only when its test gate passes.
+Build in this order, one milestone per pull request; a milestone is done only when its test gate passes. Owner decision (2026-10-14): after M0, start the web UI before M1 to M3. Its first slice (open, editor, export, strip-down edits) uses only what the core already has; screens that need validation, the timing engine or the link analyzer wait for those milestones.
 
 | Milestone | Scope | Done when |
 | --- | --- | --- |

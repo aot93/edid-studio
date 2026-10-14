@@ -26,3 +26,18 @@ export {
 } from "./safety.ts";
 export type { ExportFormat, ImportedEdid } from "./io.ts";
 export type * from "./model.ts";
+export { describeDtd, lookupVic, modeLabel } from "./describe.ts";
+export type { DtdInfo, VicInfo, VideoMode } from "./describe.ts";
+export {
+  removeDataBlock,
+  removeSvd,
+  setCtaYcbcr,
+  setHdmiDeepColour,
+  setHf420DeepColour,
+  setMonitorName,
+} from "./ops.ts";
+export type { HdmiDeepColour, Hf420DeepColour } from "./ops.ts";
+export { edidLayout } from "./layout.ts";
+export type { LayoutNode, NodeRef } from "./layout.ts";
+export { byteDiff } from "./diff.ts";
+export type { ByteDiff } from "./diff.ts";

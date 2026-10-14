@@ -10,11 +10,15 @@
     "test": "vitest run",
     "lint": "eslint .",
     "typecheck": "tsc -b",
-    "cli": "node packages/edidtool/src/cli.ts"
+    "cli": "node packages/edidtool/src/cli.ts",
+    "dev": "pnpm --filter @edid-studio/web dev",
+    "build": "pnpm --filter @edid-studio/web build",
+    "e2e": "pnpm --filter @edid-studio/web e2e"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
     "eslint": "^10.12.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.71.2",
     "vitest": "^5.0.4"
