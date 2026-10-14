@@ -43,7 +43,7 @@ export function OpenView({ onLoaded, onNew }: Props) {
     <section aria-labelledby="open-title">
       <div className="eyebrow">Open an EDID</div>
       <h2 id="open-title" className="hero">
-        Make the GPU pick the mode you meant
+        Make the GPU pick the mode you want
       </h2>
       <p className="lede">
         Load an EDID exported from the NVIDIA Control Panel (Workstation › View system topology › EDID › Export), or

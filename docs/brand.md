@@ -78,5 +78,8 @@ three font families locally instead of loading them from Google Fonts.
 
 ## Logos
 
-The reference report carries company and product logos. They are not copied
-into this public repository; add an EDID Studio mark here once one exists.
+[`design/vyv-logo.png`](../design/vyv-logo.png) is the VYV mark from the
+reference report (271 x 120, transparent, orange-to-red gradient). It reads on
+both themes, so there is no dark variant. It sits at the left of the masthead,
+34px high, before the product name. Do not recolour or stretch it. The
+report's product logos are not used.

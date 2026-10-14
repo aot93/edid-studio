@@ -11,7 +11,7 @@ const DEPTH_CHOICES: readonly Depth[] = [10, 12, 16];
 
 export function NewView({ onCreated }: Props) {
   const [name, setName] = useState("LED wall");
-  const [manufacturer, setManufacturer] = useState("EDS");
+  const [manufacturer, setManufacturer] = useState("VYV");
   const [product, setProduct] = useState("1");
   const [link, setLink] = useState<Link>("hdmi2.0");
   const [ycc444, setYcc444] = useState(false);
@@ -56,7 +56,7 @@ export function NewView({ onCreated }: Props) {
     <section aria-labelledby="new-title">
       <div className="eyebrow">New EDID</div>
       <h2 id="new-title" className="hero">
-        Build an EDID from what you want
+        Build the EDID you want
       </h2>
       <p className="lede">
         Give the raster, refresh, colour format and bit depth. EDID Studio builds an EDID that advertises exactly that

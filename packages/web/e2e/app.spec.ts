@@ -21,6 +21,13 @@ test.beforeEach(async ({ page }) => {
   await page.goto("/");
 });
 
+test("shows the VYV logo and the headline", async ({ page }) => {
+  const logo = page.getByRole("img", { name: "VYV" });
+  await expect(logo).toBeVisible();
+  expect(await logo.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(271);
+  await expect(page.getByRole("heading", { name: "Make the GPU pick the mode you want" })).toBeVisible();
+});
+
 test("serves a Content Security Policy that blocks network access", async ({ page }) => {
   const csp = await page.locator('meta[http-equiv="Content-Security-Policy"]').getAttribute("content");
   expect(csp).toContain("default-src 'self'");

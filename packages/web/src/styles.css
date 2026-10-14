@@ -35,7 +35,8 @@ code, .mono { font-family: var(--font-mono); }
   padding-bottom: 14px; margin-bottom: 22px;
   border-bottom: 3px solid; border-image: var(--accent-gradient) 1;
 }
-.brand { display: flex; align-items: baseline; gap: 10px; }
+.brand { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.brand .logo { height: 34px; width: auto; }
 .brand h1 { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.015em; }
 .brand .tag { font-family: var(--font-display); font-size: 0.66rem; font-weight: 700; letter-spacing: 0.17em; text-transform: uppercase; color: var(--accent); }
 .mast nav { display: flex; gap: 6px; margin-left: auto; flex-wrap: wrap; }

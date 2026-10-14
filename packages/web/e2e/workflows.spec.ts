@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
-import { importEdid } from "@edid-studio/core";
+import { importEdid, manufacturerId } from "@edid-studio/core";
 
 const fixture = (name: string) => readFileSync(new URL(`../../../tests/fixtures/${name}`, import.meta.url), "utf8");
 
@@ -64,6 +64,7 @@ test("creates an EDID without uploading anything", async ({ page }) => {
   const { edid, checksumErrors } = importEdid(text);
   expect(checksumErrors).toEqual([]);
   expect([edid.base.version, edid.base.revision]).toEqual([1, 3]);
+  expect(manufacturerId(edid.base.manufacturerCode)).toBe("VYV");
   const cta = edid.extensions[0];
   expect(cta?.kind === "cta" && cta.dataBlocks.find((b) => b.kind === "hdmiVsdb")).toMatchObject({ capabilities: { dc30bit: true, dc36bit: false } });
 });

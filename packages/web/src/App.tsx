@@ -8,6 +8,7 @@ import { Workspace } from "./components/Workspace.tsx";
 import { applyEdit, newSession, undo } from "./session.ts";
 import type { Session } from "./session.ts";
 import { applyTheme, loadTheme } from "./theme.ts";
+import logoUrl from "../../../design/vyv-logo.png";
 import type { Theme } from "./theme.ts";
 
 type View = "open" | "new" | "edit" | "export";
@@ -65,6 +66,7 @@ export function App() {
     <div className="wrap">
       <header className="mast">
         <div className="brand">
+          <img className="logo" src={logoUrl} alt="VYV" width={271} height={120} />
           <h1>EDID Studio</h1>
           <span className="tag">Build · explain · export</span>
         </div>
