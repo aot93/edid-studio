@@ -1,4 +1,8 @@
 {
   "files": [],
-  "references": [{ "path": "packages/edid-core" }, { "path": "packages/edidtool" }]
+  "references": [
+    { "path": "packages/edid-core" },
+    { "path": "packages/edid-core/test" },
+    { "path": "packages/edidtool" }
+  ]
 }
