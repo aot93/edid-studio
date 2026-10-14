@@ -378,10 +378,13 @@ Save the block below as `CLAUDE.md` in the repo root, with this document as `SPE
 
 ## Open questions
 
-Five answers from the owner would settle the remaining design choices.
+Five answers from the owner would settle the remaining design choices. Answers recorded 2026-10-14.
 
-- [ ] Primary OS, and how do EDIDs reach the hardware: file upload to the processor or emulator, a Windows override, or both?
-- [ ] Which links matter first: HDMI 2.0 only, or also HDMI 2.1 FRL and DisplayPort?
-- [ ] Build order: CLI first as specified, or the web UI first?
+- [x] Primary OS, and how do EDIDs reach the hardware: file upload to the processor or emulator, a Windows override, or both?
+  **Answer:** Linux and Windows; the macOS adapter is lower priority. How EDIDs reach the hardware is still open.
+- [x] Which links matter first: HDMI 2.0 only, or also HDMI 2.1 FRL and DisplayPort?
+  **Answer:** HDMI 2.0 first. DisplayPort and HDMI 2.1 FRL follow after it.
+- [x] Build order: CLI first as specified, or the web UI first?
+  **Answer:** CLI first, as specified.
 - [ ] Which devices need presets, and which file formats does each accept?
 - [ ] Do you want multi-output sets (for example a mosaic) with distinct serials in the MVP rather than v1?
