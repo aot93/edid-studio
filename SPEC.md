@@ -197,11 +197,13 @@ Nothing is exported unless it passes three rule tiers, an independent decoder an
 
 **Tier 3, link feasibility (warnings).** The analyzer from section 7, including contradiction warnings.
 
-Every rule has a stable ID, a severity, a plain-language explanation and, where safe, an automatic fix. A rule without a test is not merged.
+Every rule has a stable ID, a severity, a plain-language explanation and, where safe, an automatic fix. A rule without a test is not merged. The rule list is in `docs/rules.md`, generated from the code.
+
+**Severity policy (M1, 2026-10-14).** Severities follow `edid-decode` (its failures are errors, its warnings are warnings), with two exceptions found on hardware: "range limits only" in EDID 1.3 (`range.class`) and sRGB chromaticity without the sRGB flag (`base.srgb`) are warnings, because the NVIDIA driver accepted the working Tessera EDID with both. Missing 640x480 (`cta.640x480`) is a note, per the owner's single-mode decision. Errors block export; the UI shows no green state while any error exists. Link feasibility (tier 3) is always a warning.
 
 **Independent checks**
 
-- `edid-decode --check` runs in CI on every golden output and is available as a "second opinion" in the UI and CLI. Any disagreement is triaged as a bug, never suppressed.
+- `edid-decode --check` runs in CI on every golden output and is available as a "second opinion" in the UI and CLI. Any disagreement is triaged as a bug, never suppressed. CI builds it from a pinned commit (`scripts/build-edid-decode.sh`). Golden outputs that intentionally differ (single-mode EDIDs without 640x480, the hardware-verified Tessera output) pin their exact expected failures. A differential test checks each rule that mirrors an edid-decode check against it on all 129 corpus and fixture EDIDs; the four known differences are pinned with reasons (DisplayID and old CTA blocks the model keeps raw). The in-browser second opinion (edid-decode's WebAssembly build) is not done yet.
 - Round-trip: parse, model, serialize gives identical bytes for every fixture, unknown blocks included.
 - Property tests: random valid timings build, parse and compare equal; every DTD field is tested at its limit and limit + 1; checksums always sum to zero; length is always a multiple of 128.
 - Known-answer tests: all CTA VICs, DMT modes, CVT and GTF against reference tools, link budgets against the hand-checked cases in section 7.

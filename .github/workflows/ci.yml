@@ -21,7 +21,20 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm lint
-      - run: pnpm test
+      - uses: actions/cache@v4
+        with:
+          path: .cache/edid-decode
+          key: edid-decode-${{ hashFiles('scripts/build-edid-decode.sh') }}
+      - name: Build edid-decode (pinned, MIT)
+        run: scripts/build-edid-decode.sh
+      - name: Unit tests, including edid-decode cross-checks
+        run: pnpm test
+        env:
+          EDID_DECODE: ${{ github.workspace }}/.cache/edid-decode/edid-decode
+      - name: Fail if the edid-decode tests were skipped
+        run: pnpm vitest run packages/edid-core/test/edid-decode.test.ts --reporter=verbose | tee /tmp/ed.txt && ! grep -q "skipped" /tmp/ed.txt
+        env:
+          EDID_DECODE: ${{ github.workspace }}/.cache/edid-decode/edid-decode
 
   web:
     runs-on: ubuntu-latest

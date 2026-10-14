@@ -71,3 +71,6 @@ export { applyRecipeOp, runRecipe } from "./recipe.ts";
 export type { Recipe, RecipeOp } from "./recipe.ts";
 export { buildEdid, encodeChromaticity, SRGB } from "./build.ts";
 export type { BuildIntent, Chromaticity } from "./build.ts";
+export { RULES, validateBytes, validateEdid } from "./validate.ts";
+export type { Fix, Issue, RuleId, RuleInfo, Severity, ValidationOptions, ValidationReport } from "./validate.ts";
+export { rulesMarkdown } from "./rules-doc.ts";
