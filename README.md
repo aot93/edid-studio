@@ -10,12 +10,14 @@ quietly falls back, usually to 8-bit. EDID Studio says, for every advertised
 mode, whether it fits the link at the advertised format and depth, and builds
 EDIDs whose timings and colour flags agree with the link from the start.
 
-> **Status:** pre-alpha. M0 and M1 are done. The web UI can open, inspect,
-> strip down, build from scratch and export EDIDs, with a timing engine
-> (exact refresh, CVT, CVT-RB v1/v2, manual porches), an HDMI link budget and
-> a rule engine ([`docs/rules.md`](docs/rules.md)) cross-checked against
-> `edid-decode` in CI. Acceptance tests 1 to 5 and 7 to 9 pass; the CLI
-> commands (M3) are next.
+> **Status:** pre-alpha. M0 to M3 are done, and DisplayID timings came early
+> from M6. The web UI can open, inspect, strip down, build from scratch and
+> export EDIDs, with a timing engine (exact refresh, CVT, CVT-RB v1 to v3,
+> GTF, VIC and DMT lookups, manual porches), an HDMI link budget and a rule
+> engine ([`docs/rules.md`](docs/rules.md)) cross-checked against
+> `edid-decode` in CI. The `edidtool` CLI decodes, validates, computes
+> timings and link budgets, builds, runs recipes, diffs and converts. All
+> nine acceptance tests pass.
 
 ## Documents
 
@@ -44,6 +46,7 @@ pnpm test
 pnpm lint
 pnpm typecheck
 pnpm cli -- --help
+pnpm cli -- recipe run recipe.json -o out.txt
 pnpm dev        # web UI at http://localhost:5173
 pnpm build      # static site in packages/web/dist
 pnpm e2e        # build, then browser tests (Playwright)

@@ -1,20 +1,21 @@
-// Import and export entry points. Base64, C array and .reg output arrive with
-// the CLI `convert` command (milestone M3).
+// Import and export entry points: binary, hex text in any common layout
+// (C arrays included), and base64. TODO(verify): Windows .reg overrides need
+// the per-display registry key; not done yet.
 
 import { EDID_HEADER, manufacturerId } from "./base-block.ts";
 import { bytesEqual, slice } from "./bytes.ts";
 import { assertExportable, checksumErrors, parseEdid, serializeEdid } from "./edid.ts";
-import { EdidInputError } from "./errors.ts";
+import { EdidInputError, EdidParseError } from "./errors.ts";
 import { DEFAULT_HEX_STYLE, formatHex, parseHex } from "./hex.ts";
 import type { HexStyle } from "./hex.ts";
 import type { Edid } from "./model.ts";
-import { charCodesToString, checkInputSize, checkKnownFileType, checkUploadName } from "./safety.ts";
+import { charCodesToString, checkInputSize, checkKnownFileType, checkUploadName, MAX_EDID_BYTES } from "./safety.ts";
 
 export interface ImportedEdid {
   readonly edid: Edid;
   /** The bytes as read, before any re-serialization. */
   readonly bytes: Uint8Array;
-  readonly format: "binary" | "hex";
+  readonly format: "binary" | "hex" | "base64";
   /** Layout of hex input, so an export can mirror it. */
   readonly hexStyle: HexStyle;
   /** Blocks whose checksum is wrong in the input. Export always rewrites them. */
@@ -37,6 +38,8 @@ export function importEdid(input: Uint8Array | string): ImportedEdid {
   }
   if (typeof input !== "string") checkKnownFileType(input);
   const text = typeof input === "string" ? input : bufferToText(input);
+  // Hex digits are valid base64 too, so base64 is recognised by its encoded EDID header.
+  if (text.trimStart().startsWith(BASE64_HEADER)) return finish(parseBase64(text), "base64", DEFAULT_HEX_STYLE);
   const { bytes, style } = parseHex(text);
   return finish(bytes, "hex", style);
 }
@@ -47,7 +50,46 @@ export function importUpload(file: { readonly name: string; readonly bytes: Uint
   return importEdid(file.bytes);
 }
 
-function finish(bytes: Uint8Array, format: "binary" | "hex", hexStyle: HexStyle): ImportedEdid {
+/** 00 ff ff ff ff ff ff 00 in base64. */
+const BASE64_HEADER = "AP///////wA";
+
+function parseBase64(text: string): Uint8Array {
+  const clean = text.replace(/\s+/g, "");
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(clean) || clean.length % 4 === 1) {
+    throw new EdidParseError("input starts like base64 but holds characters or a length base64 does not allow");
+  }
+  if ((clean.length * 3) / 4 > MAX_EDID_BYTES + 3) {
+    throw new EdidInputError("too-many-bytes", `base64 input decodes to more than ${MAX_EDID_BYTES} bytes, the largest EDID`);
+  }
+  const body = clean.replace(/=+$/, "");
+  const out: number[] = [];
+  let acc = 0;
+  let bits = 0;
+  for (const ch of body) {
+    acc = (acc << 6) | BASE64.indexOf(ch);
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      out.push((acc >> bits) & 0xff);
+    }
+  }
+  return Uint8Array.from(out);
+}
+
+const BASE64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+function toBase64(bytes: Uint8Array): string {
+  let out = "";
+  for (let i = 0; i < bytes.length; i += 3) {
+    const n = ((bytes[i] ?? 0) << 16) | ((bytes[i + 1] ?? 0) << 8) | (bytes[i + 2] ?? 0);
+    const chars = [18, 12, 6, 0].map((s) => BASE64[(n >> s) & 63] ?? "");
+    const pad = i + 1 >= bytes.length ? 2 : i + 2 >= bytes.length ? 1 : 0;
+    out += chars.slice(0, 4 - pad).join("") + "=".repeat(pad);
+  }
+  return out;
+}
+
+function finish(bytes: Uint8Array, format: ImportedEdid["format"], hexStyle: HexStyle): ImportedEdid {
   return { edid: parseEdid(bytes), bytes, format, hexStyle, checksumErrors: checksumErrors(bytes) };
 }
 
@@ -76,15 +118,31 @@ function bufferToText(buf: Uint8Array): string {
   return charCodesToString(units);
 }
 
-export type ExportFormat = "binary" | "hex";
+export type ExportFormat = "binary" | "hex" | "c" | "base64";
+
+/** C array layout: eight bytes a line, "0x" prefixes, a trailing comma on each line. */
+const C_ARRAY_STYLE: HexStyle = { uppercase: false, prefix: "0x", separator: ", ", bytesPerLine: 8, trailingSeparator: true, blankLineBetweenBlocks: false };
 
 /** Serializes and formats an EDID. Throws `EdidExportError` if the guard fails. */
 export function exportEdid(edid: Edid, format: "binary"): Uint8Array;
 export function exportEdid(edid: Edid, format: "hex", style?: HexStyle): string;
+export function exportEdid(edid: Edid, format: "c" | "base64"): string;
+export function exportEdid(edid: Edid, format: ExportFormat, style?: HexStyle): Uint8Array | string;
 export function exportEdid(edid: Edid, format: ExportFormat, style: HexStyle = DEFAULT_HEX_STYLE): Uint8Array | string {
   const bytes = serializeEdid(edid);
   assertExportable(bytes);
-  return format === "binary" ? bytes : formatHex(bytes, style);
+  switch (format) {
+    case "binary":
+      return bytes;
+    case "hex":
+      return formatHex(bytes, style);
+    case "c": {
+      const body = formatHex(bytes, C_ARRAY_STYLE).trimEnd().split("\n").map((l) => `  ${l}`).join("\n");
+      return `unsigned char edid[${bytes.length}] = {\n${body}\n};\n`;
+    }
+    case "base64":
+      return `${toBase64(bytes)}\n`;
+  }
 }
 
 const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])$/i;
@@ -109,5 +167,6 @@ export function downloadFileName(edid: Edid, format: ExportFormat): string {
     .slice(0, 64)
     .replace(/[-.]+$/, "");
   if (stem === "" || WINDOWS_RESERVED.test(stem.split(".")[0] ?? "")) stem = `edid-${stem}`.replace(/-$/, "");
-  return `${stem}.${format === "binary" ? "bin" : "txt"}`;
+  const ext: Record<ExportFormat, string> = { binary: "bin", hex: "txt", c: "h", base64: "b64" };
+  return `${stem}.${ext[format]}`;
 }

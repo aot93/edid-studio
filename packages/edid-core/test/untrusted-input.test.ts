@@ -182,6 +182,17 @@ describe("fuzz", () => {
     }
   });
 
+  it("random text that starts like base64", () => {
+    const r = rng(5);
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/= \n!";
+    for (let n = 0; n < 500; n++) {
+      let s = "AP///////wA";
+      const len = Math.floor(r() * 400);
+      for (let i = 0; i < len; i++) s += alphabet[Math.floor(r() * alphabet.length)];
+      importSafely(s);
+    }
+  });
+
   it("valid EDIDs with corrupted bytes", () => {
     const r = rng(3);
     const seeds = ["dell-p2415q-hdmi2.0", "samsung-q800t-hdmi2.1", "lg-oled-c9-hdmi", "apple-xdr-6k", "sharp-lc70uq17u-vga"].map(

@@ -18,7 +18,9 @@ import type {
 export const CTA_EXTENSION_TAG = 0x02;
 
 /** Data block tag codes (CTA-861-I table 55). */
+const TAG_AUDIO = 1;
 const TAG_VIDEO = 2;
+const TAG_SPEAKER_ALLOCATION = 4;
 const TAG_VENDOR = 3;
 const TAG_EXTENDED = 7;
 
@@ -119,6 +121,14 @@ function parseTypedDataBlock(bytes: readonly number[]): DataBlock | undefined {
   const payload = bytes.slice(1);
 
   if (tag === TAG_VIDEO) return { kind: "video", svds: payload.map(decodeSvd) };
+  if (tag === TAG_AUDIO && payload.length > 0 && payload.length % 3 === 0) {
+    const sads: (readonly [number, number, number])[] = [];
+    for (let i = 0; i < payload.length; i += 3) sads.push([byteAt(payload, i), byteAt(payload, i + 1), byteAt(payload, i + 2)]);
+    return { kind: "audio", sads };
+  }
+  if (tag === TAG_SPEAKER_ALLOCATION && payload.length === 3) {
+    return { kind: "speakerAllocation", speakers: byteAt(payload, 0) | (byteAt(payload, 1) << 8) | (byteAt(payload, 2) << 16) };
+  }
 
   if (tag === TAG_VENDOR && payload.length >= 3) {
     const oui = byteAt(payload, 0) | (byteAt(payload, 1) << 8) | (byteAt(payload, 2) << 16);
@@ -144,6 +154,13 @@ function parseTypedDataBlock(bytes: readonly number[]): DataBlock | undefined {
 
 export function serializeDataBlock(block: DataBlock): number[] {
   switch (block.kind) {
+    case "audio":
+      if (block.sads.length === 0) throw new EdidEncodeError("audio data block", "an audio data block needs at least one short audio descriptor");
+      return withHeader(TAG_AUDIO, block.sads.flatMap((sad) => sad.map((v) => checkField("short audio descriptor byte", v, 8))));
+    case "speakerAllocation": {
+      const v = checkField("speaker allocation", block.speakers, 24);
+      return withHeader(TAG_SPEAKER_ALLOCATION, [v & 0xff, (v >> 8) & 0xff, v >> 16]);
+    }
     case "video":
       return withHeader(TAG_VIDEO, block.svds.map(encodeSvd));
     case "ycbcr420Video":

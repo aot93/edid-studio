@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { buildEdid, buildTiming, EdidEncodeError, EdidExportError, LINKS, serializeEdid, importEdid } from "@edid-studio/core";
+import { buildEdid, EdidEncodeError, EdidExportError, fallbackDtd, LINKS, serializeEdid, importEdid } from "@edid-studio/core";
 import type { Depth, ImportedEdid, Link, TimingResult } from "@edid-studio/core";
 import { DEFAULT_SEED, TimingEditor } from "./TimingEditor.tsx";
 
@@ -9,7 +9,7 @@ interface Props {
 
 const DEPTH_CHOICES: readonly Depth[] = [10, 12, 16];
 
-/** Base-block timing for sources that ignore DisplayID: 1920x1080 at the requested refresh. */
+/** The raster fallbackDtd() uses, for the explanation. */
 const FALLBACK = { hActive: 1920, vActive: 1080 } as const;
 
 export function NewView({ onCreated }: Props) {
@@ -38,12 +38,7 @@ export function NewView({ onCreated }: Props) {
     }
     try {
       // A raster a DTD cannot hold goes in a DisplayID block, with a fallback DTD in the base block.
-      const fallback = timing.dtd ? undefined : buildTiming({ ...FALLBACK, refresh: timing.request.refresh, formula: "exact" }).dtd;
-      const baseTiming = timing.dtd ?? fallback;
-      if (!baseTiming) {
-        setError("No fallback timing fits a DTD at this refresh rate.");
-        return;
-      }
+      const baseTiming = timing.dtd ?? fallbackDtd(timing.request.refresh);
       const edid = buildEdid({
         name,
         manufacturerId: manufacturer.toUpperCase(),

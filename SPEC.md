@@ -313,6 +313,15 @@ edidtool apply   <file> --display <id>     # later, guarded (section 13)
 
 Output files are never overwritten without `--force`. Hex output mirrors the style of the input file unless `--style` says otherwise.
 
+Notes on the M3 implementation (2026-10-21):
+
+- `diff` exits 0 when the files are identical and 1 when they differ, like `diff(1)`.
+- `build` and `recipe run` validate the result and write nothing when there are errors (exit 2). A recipe's `expect` block is checked the same way.
+- A recipe is untrusted input: unknown operations and fields are refused, and its `base` file must sit in the recipe's folder unless `--base` names one.
+- Hex output with no input layout to mirror is one line, as the NVIDIA Control Panel loads; `--style lines` gives 16 bytes a line.
+- `setAudio` writes LPCM only (2, 6 or 8 channels).
+- `--to reg` is not done yet. A Windows `.reg` override needs the display's registry key, and the layout needs checking against Microsoft's EDID override documentation (TODO(verify)).
+
 ## Platform integration and safety
 
 The tool reads freely but writes to a system only after an explicit, previewed confirmation with a backup already stored.

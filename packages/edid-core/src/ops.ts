@@ -262,25 +262,26 @@ export function addDetailedTiming(edid: Edid, dtd: DetailedTimingDescriptor): Ed
 
 /**
  * Adds a DisplayID Type I timing, for rasters a DTD cannot hold, as the
- * preferred DisplayID timing. Appends to the first typed DisplayID section,
+ * preferred DisplayID timing unless `preferred: false`. Appends to the first typed DisplayID section,
  * or adds a section after the last extension. On EDID 1.3 a third block
  * needs an HDMI Forum EEODB in block 1 (edid-decode check_base_block()), so
  * one is added or its count updated; the base block's DTD stays as the
  * fallback for sources that ignore DisplayID.
  */
-export function addDisplayIdTiming(edid: Edid, timing: DisplayIdTiming): Edid {
-  const added = { ...timing, flags: timing.flags | TYPE1_PREFERRED };
+export function addDisplayIdTiming(edid: Edid, timing: DisplayIdTiming, options: { readonly preferred?: boolean } = {}): Edid {
+  const preferred = options.preferred ?? true;
+  const added = { ...timing, flags: preferred ? timing.flags | TYPE1_PREFERRED : timing.flags & ~TYPE1_PREFERRED };
   // Bit 7 means preferred only below block revision 2 (edid-decode parse_displayid_type_1_7_timing()).
   const unprefer = (b: DisplayIdDataBlock): DisplayIdDataBlock =>
     b.kind === "type1Timings" && (b.revision & 0x07) < 2 ? { ...b, timings: b.timings.map((t) => ({ ...t, flags: t.flags & ~TYPE1_PREFERRED })) } : b;
   const at = edid.extensions.findIndex((e) => e.kind === "displayid");
   const extensions =
     at === -1
-      ? [...edid.extensions, displayIdSection([added])]
+      ? [...edid.extensions, displayIdSection([added], { preferred })]
       : edid.extensions.map((e, i) => {
           if (e.kind !== "displayid") return e;
-          const blocks = e.dataBlocks.map(unprefer);
-          if (i !== at) return { ...e, dataBlocks: blocks };
+          const blocks = preferred ? e.dataBlocks.map(unprefer) : e.dataBlocks;
+          if (i !== at) return preferred ? { ...e, dataBlocks: blocks } : e;
           const t1 = blocks.findIndex((b) => b.kind === "type1Timings" && (b.revision & 0x07) < 2);
           const grown: DisplayIdDataBlock[] =
             t1 === -1
@@ -293,7 +294,7 @@ export function addDisplayIdTiming(edid: Edid, timing: DisplayIdTiming): Edid {
 }
 
 /** Keeps an HDMI Forum EEODB in block 1 in step with the extension count, adding one where EDID 1.3 needs it. */
-function withEeodb(edid: Edid): Edid {
+export function withEeodb(edid: Edid): Edid {
   const first = edid.extensions[0];
   if (first?.kind !== "cta") return edid;
   const count = edid.extensions.length;

@@ -38,3 +38,8 @@ export class EdidInputError extends EdidParseError {
     this.reason = reason;
   }
 }
+
+/** A recipe file could not be read: bad JSON, an unknown operation or a wrong field. */
+export class RecipeError extends EdidParseError {
+  override name = "RecipeError";
+}

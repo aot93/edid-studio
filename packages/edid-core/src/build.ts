@@ -11,6 +11,8 @@ import { tmdsRateKHz } from "./link.ts";
 import type { ColourFormat, Depth, Link } from "./link.ts";
 import type { CtaExtension, DataBlock, Descriptor, DetailedTimingDescriptor, DisplayIdTiming, Edid, Extension } from "./model.ts";
 import { autoRangeLimits, setColor, setMonitorName, setRangeLimits } from "./ops.ts";
+import { buildTiming } from "./timing.ts";
+import type { Rational } from "./timing.ts";
 
 export interface Chromaticity {
   readonly red: readonly [number, number];
@@ -34,6 +36,13 @@ export function encodeChromaticity(c: Chromaticity): number[] {
     (lo(4) << 6) | (lo(5) << 4) | (lo(6) << 2) | lo(7),
     ...v.map((x) => x >> 2),
   ];
+}
+
+/** Base-block timing for sources that ignore DisplayID: 1920x1080 at the requested refresh, exact where it can be. */
+export function fallbackDtd(refresh: string | Rational): DetailedTimingDescriptor {
+  const r = buildTiming({ hActive: 1920, vActive: 1080, refresh, formula: "exact" });
+  if (!r.dtd) throw new EdidEncodeError("fallback timing", `no 1920x1080 fallback fits a DTD at this refresh: ${r.dtdProblems.join("; ")}`);
+  return r.dtd;
 }
 
 export interface BuildIntent {

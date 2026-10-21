@@ -165,6 +165,8 @@ export interface CtaExtension {
 }
 
 export type DataBlock =
+  | AudioDataBlock
+  | SpeakerAllocationDataBlock
   | VideoDataBlock
   | Ycbcr420VideoDataBlock
   | Ycbcr420CapabilityMapDataBlock
@@ -172,6 +174,28 @@ export type DataBlock =
   | HdmiVsdb
   | HdmiForumVsdb
   | RawDataBlock;
+
+/**
+ * Audio data block, tag 1: short audio descriptors, three bytes each
+ * (CTA-861-I section 7.5.2; edid-decode cta_audio_block()). Byte 0: format
+ * code in bits 6-3, channels - 1 in bits 2-0. Byte 1: sample rates, bit 0
+ * 32 kHz up to bit 6 192 kHz. Byte 2: for LPCM, sample sizes 16/20/24 in
+ * bits 0-2; for other formats, their own meaning. Kept as stored.
+ */
+export interface AudioDataBlock {
+  readonly kind: "audio";
+  readonly sads: readonly (readonly [number, number, number])[];
+}
+
+/**
+ * Speaker allocation data block, tag 4: a 24-bit speaker mask, little-endian
+ * (CTA-861-I section 7.5.3; edid-decode cta_sadb(), bit 0 FL/FR, 1 LFE1,
+ * 2 FC, 3 LS/RS, 4 BC, 5 FLc/FRc, 6 BL/BR, ...).
+ */
+export interface SpeakerAllocationDataBlock {
+  readonly kind: "speakerAllocation";
+  readonly speakers: number;
+}
 
 /** Short video descriptor. `native` is only expressible for VICs 1 to 64. */
 export interface Svd {
