@@ -97,6 +97,10 @@ export function descriptorLabel(d: Descriptor): string {
 
 export function dataBlockLabel(b: DataBlock): string {
   switch (b.kind) {
+    case "audio":
+      return `Audio (${b.sads.length} ${b.sads.length === 1 ? "format" : "formats"})`;
+    case "speakerAllocation":
+      return "Speaker allocation";
     case "video":
       return `Video modes (${b.svds.length})`;
     case "ycbcr420Video":

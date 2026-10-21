@@ -222,8 +222,9 @@ export function preferredDisplayIdTiming(edid: Edid): DisplayIdTiming | undefine
   return undefined;
 }
 
-/** A DisplayID section holding these Type I timings, the first preferred. */
-export function displayIdSection(timings: readonly DisplayIdTiming[]): DisplayIdExtension {
+/** A DisplayID section holding these Type I timings, the first preferred unless `preferred: false`. */
+export function displayIdSection(timings: readonly DisplayIdTiming[], options: { readonly preferred?: boolean } = {}): DisplayIdExtension {
+  const preferred = options.preferred ?? true;
   return {
     kind: "displayid",
     version: DISPLAYID_VERSION,
@@ -233,7 +234,7 @@ export function displayIdSection(timings: readonly DisplayIdTiming[]): DisplayId
       {
         kind: "type1Timings",
         revision: 0,
-        timings: timings.map((t, i) => ({ ...t, flags: i === 0 ? t.flags | TYPE1_PREFERRED : t.flags & ~TYPE1_PREFERRED })),
+        timings: timings.map((t, i) => ({ ...t, flags: i === 0 && preferred ? t.flags | TYPE1_PREFERRED : t.flags & ~TYPE1_PREFERRED })),
       },
     ],
     filler: 0,

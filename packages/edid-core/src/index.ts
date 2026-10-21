@@ -12,7 +12,7 @@ export {
   serializeEdid,
   structuralProblems,
 } from "./edid.ts";
-export { EdidEncodeError, EdidExportError, EdidInputError, EdidParseError } from "./errors.ts";
+export { EdidEncodeError, EdidExportError, EdidInputError, EdidParseError, RecipeError } from "./errors.ts";
 export type { InputRejection } from "./errors.ts";
 export { DEFAULT_HEX_STYLE, formatHex, ONE_LINE_HEX_STYLE, parseHex } from "./hex.ts";
 export type { HexStyle, ParsedHex } from "./hex.ts";
@@ -92,10 +92,14 @@ export {
   UNUSED_STANDARD_TIMING,
 } from "./base-timings.ts";
 export type { EstablishedTiming, StandardAspect, StandardTiming } from "./base-timings.ts";
-export { applyRecipeOp, runRecipe } from "./recipe.ts";
-export type { Recipe, RecipeOp } from "./recipe.ts";
-export { buildEdid, encodeChromaticity, SRGB } from "./build.ts";
+export { applyRecipeOp, checkExpect, opLabel, parseRecipe, runRecipe, runRecipeSteps } from "./recipe.ts";
+export type { Polarity, Recipe, RecipeExpect, RecipeOp, RecipeStep } from "./recipe.ts";
+export { buildEdid, encodeChromaticity, fallbackDtd, SRGB } from "./build.ts";
 export type { BuildIntent, Chromaticity } from "./build.ts";
 export { RULES, validateBytes, validateEdid } from "./validate.ts";
 export type { Fix, Issue, RuleId, RuleInfo, Severity, ValidationOptions, ValidationReport } from "./validate.ts";
 export { rulesMarkdown } from "./rules-doc.ts";
+export { dataBlockName, describeChanges, modeLabels } from "./changes.ts";
+export { describeEdid } from "./report.ts";
+export { addMode, removeMode, setAudio, setHdmiCaps, setIdentity, setSerial, stripAudio } from "./edit-ops.ts";
+export type { HdmiCaps, Identity, LpcmAudio, ModeMatch, ModeRequest } from "./edit-ops.ts";
