@@ -1,14 +1,16 @@
 // Timing engine: turns "width x height at a refresh rate" into an exact,
 // encodable timing, or says precisely why it cannot (SPEC.md section 6).
 //
-// CVT, CVT-RB v1 and CVT-RB v2 are ported from edid-decode
-// calc-gtf-cvt.cpp calc_cvt_mode() (MIT), progressive and without margins.
-// Known-answer tests compare against edid-decode --cvt.
+// CVT, CVT-RB v1, v2 and v3 and GTF are ported from edid-decode
+// calc-gtf-cvt.cpp calc_cvt_mode() and calc_gtf_mode() (MIT), progressive
+// and without margins. Known-answer tests compare against edid-decode --cvt
+// and --gtf. VIC and DMT timings come from edid-decode's tables.
 
 import { serializeDescriptor } from "./descriptors.ts";
 import { displayIdTimingProblems } from "./displayid.ts";
 import { EdidEncodeError } from "./errors.ts";
 import type { DetailedTimingDescriptor, DisplayIdTiming } from "./model.ts";
+import { findDmt, findVic, matchingStandards } from "./standard-timings.ts";
 
 /** Largest active size any encoding here holds: DisplayID Type I's 16 bits, stored minus one. */
 export const MAX_ACTIVE = 65536;
@@ -19,15 +21,32 @@ export interface Rational {
   readonly den: number;
 }
 
-export type Formula = "manual" | "exact" | "cvt" | "cvt-rb" | "cvt-rb2";
+export type Formula = "manual" | "exact" | "cvt" | "cvt-rb" | "cvt-rb2" | "cvt-rb3" | "gtf" | "vic" | "dmt";
 
 export const FORMULA_NAMES: Record<Formula, string> = {
   exact: "Exact refresh (HDMI-safe RB)",
   "cvt-rb": "CVT reduced blanking v1",
   "cvt-rb2": "CVT reduced blanking v2",
+  "cvt-rb3": "CVT reduced blanking v3",
   cvt: "CVT",
+  gtf: "GTF",
+  vic: "CTA-861 VIC lookup",
+  dmt: "VESA DMT lookup",
   manual: "Manual porches",
 };
+
+/** CVT-RB v3 options (VESA CVT 2.0; edid-decode --cvt hblank, vblank, early-vsync). */
+export interface Rb3Options {
+  /** Horizontal blanking, 80 to 200 pixels in steps of 8. Default 80; 160 is the "alt" variant. */
+  readonly hBlank?: number;
+  /** Minimum vertical blanking interval in microseconds, 460 by default. */
+  readonly vBlankUs?: number;
+  /** Puts vsync early in the vertical blank (half the blanking as back porch). */
+  readonly earlyVsync?: boolean;
+}
+
+/** Default for the HDMI blanking heuristic (SPEC.md section 6): configurable, not a spec constant. */
+export const DEFAULT_MIN_HDMI_HBLANK = 160;
 
 export interface Porches {
   readonly hFrontPorch: number;
@@ -51,6 +70,22 @@ export interface TimingRequest {
   readonly vSyncPositive?: boolean;
   /** Exact solver: how many extra lines and pixels it may add to the blanking. */
   readonly slack?: { readonly lines: number; readonly pixels: number };
+  /** CVT-RB v3 options. */
+  readonly rb3?: Rb3Options;
+  /** Warn below this much horizontal blanking with reduced-blanking formulas. Default 160. */
+  readonly minHdmiHBlank?: number;
+}
+
+/** How a timing can be carried (SPEC.md section 6). */
+export interface Encodings {
+  /** Fits an 18-byte detailed timing descriptor. */
+  readonly dtd: boolean;
+  /** Fits a DisplayID Type I timing. */
+  readonly displayId: boolean;
+  /** CTA-861 VICs with this exact timing (or its 1000/1001 variant): a short video descriptor can carry it. */
+  readonly vics: readonly number[];
+  /** VESA DMT IDs with this exact timing. */
+  readonly dmts: readonly number[];
 }
 
 export interface Timing extends Porches {
@@ -83,6 +118,7 @@ export interface TimingResult {
   readonly displayId?: DisplayIdTiming;
   /** Type I field-limit failures, by field name. */
   readonly displayIdProblems: readonly string[];
+  readonly encodings: Encodings;
   /** Warnings and suggestions in plain language. */
   readonly notes: readonly string[];
 }
@@ -137,9 +173,9 @@ function checkRequest(req: TimingRequest): void {
 export function buildTiming(req: TimingRequest): TimingResult {
   checkRequest(req);
   const refresh = parseRefresh(req.refresh);
-  const rb = req.formula !== "cvt";
-  const hPos = req.hSyncPositive ?? rb;
-  const vPos = req.vSyncPositive ?? !rb;
+  const rb = req.formula !== "cvt" && req.formula !== "gtf";
+  let hPos = req.hSyncPositive ?? rb;
+  let vPos = req.vSyncPositive ?? !rb;
 
   let porches: Porches;
   let clockKHz: number;
@@ -160,12 +196,46 @@ export function buildTiming(req: TimingRequest): TimingResult {
       if (!solved.exact) notes.push(`No blanking within the allowed slack gives exactly ${fmtHz(rationalHz(refresh))} Hz with a 10 kHz clock step; this is the closest.`);
       break;
     }
+    case "vic":
+    case "dmt": {
+      const hz = rationalHz(refresh);
+      const found = req.formula === "vic" ? findVic(req.hActive, req.vActive, hz) : findDmt(req.hActive, req.vActive, hz);
+      if (!found) {
+        const what = req.formula === "vic" ? "CTA-861 VIC" : "VESA DMT timing";
+        throw new EdidEncodeError(req.formula, `no ${what} is ${req.hActive}x${req.vActive} at ${fmtHz(hz)} Hz`);
+      }
+      const t = found.timing;
+      porches = { hFrontPorch: t.hFrontPorch, hSync: t.hSync, hBackPorch: t.hBackPorch, vFrontPorch: t.vFrontPorch, vSync: t.vSync, vBackPorch: t.vBackPorch };
+      clockKHz = found.clockKHz;
+      // The table sets the polarity; an explicit choice still wins.
+      hPos = req.hSyncPositive ?? t.hSyncPositive;
+      vPos = req.vSyncPositive ?? t.vSyncPositive;
+      break;
+    }
+    case "gtf": {
+      const gtf = calcGtf(req.hActive, req.vActive, rationalHz(refresh));
+      porches = gtf.porches;
+      clockKHz = gtf.clockKHz;
+      if (req.hActive % 8 !== 0) notes.push(`GTF rounds the width to a multiple of 8; ${req.hActive} is not one.`);
+      break;
+    }
     default: {
-      const cvt = calcCvt(req.hActive, req.vActive, rationalHz(refresh), req.formula === "cvt" ? 0 : req.formula === "cvt-rb" ? 1 : 2);
+      const level = req.formula === "cvt" ? 0 : req.formula === "cvt-rb" ? 1 : req.formula === "cvt-rb2" ? 2 : 3;
+      const cvt = calcCvt(req.hActive, req.vActive, rationalHz(refresh), level, req.rb3);
       porches = cvt.porches;
       clockKHz = cvt.clockKHz;
       if (req.hActive % 8 !== 0 && req.formula !== "cvt-rb2") notes.push(`CVT rounds the width down to a multiple of 8; ${req.hActive} is not one.`);
     }
+  }
+  for (const [k, name] of [
+    ["hFrontPorch", "horizontal front porch"],
+    ["hSync", "horizontal sync width"],
+    ["hBackPorch", "horizontal back porch"],
+    ["vFrontPorch", "vertical front porch"],
+    ["vSync", "vertical sync width"],
+    ["vBackPorch", "vertical back porch"],
+  ] as const) {
+    if (porches[k] < 0) throw new EdidEncodeError(k, `the ${FORMULA_NAMES[req.formula]} formula gives a ${name} of ${porches[k]}, which no timing can hold`);
   }
 
   const hTotal = req.hActive + porches.hFrontPorch + porches.hSync + porches.hBackPorch;
@@ -183,8 +253,9 @@ export function buildTiming(req: TimingRequest): TimingResult {
     );
   }
   if (req.hActive % 8 !== 0) notes.push(`Width ${req.hActive} is not a multiple of 8; some sources and scalers handle that badly.`);
-  if (rb && porches.hFrontPorch + porches.hSync + porches.hBackPorch < 160) {
-    notes.push("Horizontal blanking under 160 pixels is not generally HDMI-safe (a heuristic, not a spec limit).");
+  const minHBlank = req.minHdmiHBlank ?? DEFAULT_MIN_HDMI_HBLANK;
+  if (rb && porches.hFrontPorch + porches.hSync + porches.hBackPorch < minHBlank) {
+    notes.push(`Horizontal blanking under ${minHBlank} pixels is not generally HDMI-safe (a heuristic, not a spec limit).`);
   }
 
   const timing: Timing = { hActive: req.hActive, vActive: req.vActive, ...porches, hTotal, vTotal, hSyncPositive: hPos, vSyncPositive: vPos, pixelClock10kHz };
@@ -223,7 +294,13 @@ export function buildTiming(req: TimingRequest): TimingResult {
     vSyncPositive: vPos,
   };
   const displayIdProblems = displayIdTimingProblems(displayIdCandidate);
-  if (dtdProblems.length > 0) notes.push(...suggestionsFor(candidate, displayIdProblems.length === 0));
+  const standards = matchingStandards({ ...timing, pixelClockKHz: pixelClock10kHz * 10 });
+  if (dtdProblems.length > 0) {
+    // A standard timing needs no DTD at all: a short video descriptor names it.
+    const vic = standards.vics[0];
+    if (vic !== undefined) notes.push(`This is VIC ${vic}'s timing, so a CTA-861 video data block can list it as VIC ${vic} instead of a DTD.`);
+    notes.push(...suggestionsFor(candidate, displayIdProblems.length === 0));
+  }
 
   return {
     request: req,
@@ -237,6 +314,7 @@ export function buildTiming(req: TimingRequest): TimingResult {
     dtdProblems,
     ...(displayIdProblems.length === 0 ? { displayId: displayIdCandidate } : {}),
     displayIdProblems,
+    encodings: { dtd: dtdProblems.length === 0, displayId: displayIdProblems.length === 0, ...standards },
     notes,
   };
 }
@@ -329,10 +407,10 @@ function solveExact(req: TimingRequest, refresh: Rational): { porches: Porches; 
 }
 
 /**
- * CVT 1.2 timing, ported from edid-decode calc_cvt_mode(). rb: 0 none,
- * 1 RB v1, 2 RB v2. Progressive, no margins.
+ * CVT timing, ported from edid-decode calc_cvt_mode(). rb: 0 none, 1 RB v1,
+ * 2 RB v2, 3 RB v3 (CVT 2.0, with its options). Progressive, no margins.
  */
-export function calcCvt(hPixels: number, vLines: number, fps: number, rb: 0 | 1 | 2): { porches: Porches; clockKHz: number } {
+export function calcCvt(hPixels: number, vLines: number, fps: number, rb: 0 | 1 | 2 | 3, rb3: Rb3Options = {}): { porches: Porches; clockKHz: number } {
   const CELL_GRAN = 8;
   const CVT_MIN_VSYNC_BP = 550;
   const CVT_MIN_V_PORCH = 3;
@@ -341,6 +419,16 @@ export function calcCvt(hPixels: number, vLines: number, fps: number, rb: 0 | 1 
   const CVT_C_PRIME = 30;
   const CVT_M_PRIME = 300;
   const CVT_RB_MIN_VBLANK = 460;
+  const CVT_RB_ALT_MIN_VBLANK = 300;
+
+  // RB v3 vertical blank: at least 300 us, nothing strictly between 440 and 460, at most 920.
+  let rbVBlank = rb3.vBlankUs ?? CVT_RB_MIN_VBLANK;
+  if (rb === 3) {
+    if (rbVBlank < CVT_RB_ALT_MIN_VBLANK) rbVBlank = CVT_RB_ALT_MIN_VBLANK;
+    else if (rbVBlank > CVT_RB_ALT_MIN_VBLANK + 140 && rbVBlank < CVT_RB_MIN_VBLANK) rbVBlank = CVT_RB_MIN_VBLANK;
+    else if (rbVBlank > CVT_RB_MIN_VBLANK + 460) rbVBlank = CVT_RB_MIN_VBLANK + 460;
+  }
+  const rbMinVBlank = rb === 3 ? rbVBlank : CVT_RB_MIN_VBLANK;
 
   const cellGran = rb === 2 ? 1 : CELL_GRAN;
   const hPixelsRnd = Math.floor(hPixels / cellGran) * cellGran;
@@ -348,6 +436,7 @@ export function calcCvt(hPixels: number, vLines: number, fps: number, rb: 0 | 1 
   const totalActivePixels = hPixelsRnd;
   const clockStep = rb >= 2 ? 0.001 : 0.25;
   let hBlank = rb === 1 ? 160 : 80;
+  if (rb === 3 && rb3.hBlank) hBlank = Math.min(200, Math.max(80, rb3.hBlank & ~7));
   const rbVFporch = rb === 1 ? 3 : 1;
   let hSync = 32;
 
@@ -375,16 +464,21 @@ export function calcCvt(hPixels: number, vLines: number, fps: number, rb: 0 | 1 
     hSync = Math.floor((totalPixels * 0.08) / CELL_GRAN) * CELL_GRAN;
     pixelFreq = Math.floor(totalPixels / hPeriodEst / clockStep) * clockStep;
   } else {
-    const hPeriodEst = (1_000_000 / fps - CVT_RB_MIN_VBLANK) / vLinesRnd;
-    const vbiLines = Math.floor(CVT_RB_MIN_VBLANK / hPeriodEst) + 1;
-    const rbVBporch = rb === 1 ? CVT_MIN_V_BPORCH : CVT_FIXED_V_BPORCH;
+    const hPeriodEst = (1_000_000 / fps - rbMinVBlank) / vLinesRnd;
+    const vbiLines = Math.floor(rbMinVBlank / hPeriodEst) + 1;
+    let rbVBporch = rb === 1 ? CVT_MIN_V_BPORCH : CVT_FIXED_V_BPORCH;
     const rbMinVbi = rbVFporch + vSync + rbVBporch;
     vBlank = vbiLines < rbMinVbi ? rbMinVbi : vbiLines;
     const totalVLines = vBlank + vLinesRnd;
+    if (rb === 3 && rb3.earlyVsync) {
+      rbVBporch = Math.floor(vbiLines / 2);
+      if (vBlank - rbVBporch - vSync < rbVFporch) rbVBporch = vBlank - vSync - rbVFporch;
+    }
     vSyncBp = rb === 1 ? vBlank - rbVFporch : vSync + rbVBporch;
     const totalPixels = hBlank + totalActivePixels;
     const freq = fps * totalVLines * totalPixels;
-    pixelFreq = Math.floor(freq / 1_000_000 / clockStep) * clockStep;
+    // RB v3 rounds the clock up so the refresh is never below the target.
+    pixelFreq = (rb === 3 ? Math.ceil : Math.floor)(freq / 1_000_000 / clockStep) * clockStep;
   }
 
   const vBackPorch = vSyncBp - vSync;
@@ -395,6 +489,42 @@ export function calcCvt(hPixels: number, vLines: number, fps: number, rb: 0 | 1 
   const widthLoss = hPixels - hPixelsRnd;
   return {
     porches: { hFrontPorch, hSync, hBackPorch: hBackPorch - widthLoss, vFrontPorch, vSync, vBackPorch },
+    clockKHz: Math.round(1000 * pixelFreq),
+  };
+}
+
+/**
+ * GTF timing (VESA GTF 1.1, default curve C=40, M=600, K=128, J=20), ported
+ * from edid-decode calc_gtf_mode() with the vertical rate as input.
+ * Progressive, no margins. The front porch can come out negative for small
+ * rasters (edid-decode: 292x176 at 76 Hz); the caller refuses that.
+ */
+export function calcGtf(hPixels: number, vLines: number, fps: number): { porches: Porches; clockKHz: number } {
+  const CELL_GRAN = 8;
+  const GTF_MIN_PORCH = 1;
+  const GTF_V_SYNC_RQD = 3;
+  const GTF_H_SYNC_PERC = 8;
+  const GTF_MIN_VSYNC_BP = 550;
+  const [C, M, K, J] = [40, 600, 128, 20];
+  const cPrime = ((C - J) * K) / 256 + J;
+  const mPrime = (K / 256) * M;
+
+  const hPixelsRnd = Math.round(hPixels / CELL_GRAN) * CELL_GRAN;
+  const hPeriodEst = ((1 / fps - GTF_MIN_VSYNC_BP / 1_000_000) / (vLines + GTF_MIN_PORCH)) * 1_000_000;
+  const vSyncBp = Math.round(GTF_MIN_VSYNC_BP / hPeriodEst);
+  const totalVLines = vLines + vSyncBp + GTF_MIN_PORCH;
+  const vFieldRateEst = (1 / hPeriodEst / totalVLines) * 1_000_000;
+  const hPeriod = hPeriodEst / (fps / vFieldRateEst);
+  const idealDutyCycle = cPrime - (mPrime * hPeriod) / 1000;
+  const hBlank = Math.round((hPixelsRnd * idealDutyCycle) / (100 - idealDutyCycle) / (2 * CELL_GRAN)) * 2 * CELL_GRAN;
+  const totalPixels = hPixelsRnd + hBlank;
+  const pixelFreq = totalPixels / hPeriod;
+  const hSync = Math.round((GTF_H_SYNC_PERC / 100) * totalPixels / CELL_GRAN) * CELL_GRAN;
+  const hFrontPorch = hBlank / 2 - hSync;
+  // GTF works on the rounded width; the difference comes out of the back porch so totals stay consistent.
+  const widthLoss = hPixels - hPixelsRnd;
+  return {
+    porches: { hFrontPorch, hSync, hBackPorch: hFrontPorch + hSync - widthLoss, vFrontPorch: GTF_MIN_PORCH, vSync: GTF_V_SYNC_RQD, vBackPorch: vSyncBp - GTF_V_SYNC_RQD },
     clockKHz: Math.round(1000 * pixelFreq),
   };
 }

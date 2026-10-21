@@ -51,6 +51,7 @@ warn is warning), except where a hardware-verified EDID shows a source accepts i
 | `color.y444-flag` | error | DC_Y444 needs YCbCr 4:4:4 support |
 | `color.y444-depth` | warning | DC_Y444 needs a deep colour depth |
 | `color.420-depth` | warning | 4:2:0 deep colour needs 4:2:0 modes |
+| `color.subsampled-odd` | error | YCbCr 4:2:2 is not declared with an odd-width timing |
 
 ## Tier 3: link feasibility
 

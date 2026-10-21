@@ -72,6 +72,8 @@ describe("buildEdid", () => {
     expect(() => buildEdid({ ...intent, link: "dvi" })).toThrow(/DVI/);
     expect(() => buildEdid({ ...intent, formats: ["rgb", "ycbcr420"] })).toThrow(/4:2:0/);
     expect(() => buildEdid({ ...intent, manufacturerId: "e1" })).toThrow(/manufacturer/);
+    // 4:2:2 shares chroma between pixel pairs: an odd width cannot carry it (SPEC.md section 6).
+    expect(() => buildEdid({ ...intent, formats: ["rgb", "ycbcr422"], timing: timing(3839, 2160, "50") })).toThrow(/3839 is odd/);
   });
 
   it("a DVI EDID is a single block", () => {

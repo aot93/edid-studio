@@ -96,6 +96,11 @@ export function buildEdid(intent: BuildIntent): Edid {
   }
   const timings = [intent.timing, ...(intent.extraTimings ?? [])];
   const displayIdTimings = intent.displayIdTimings ?? [];
+  if (intent.formats.includes("ycbcr422")) {
+    // 4:2:2 shares chroma between pixel pairs (SPEC.md section 6).
+    const odd = [...timings, ...displayIdTimings].find((t) => t.hActive % 2 === 1);
+    if (odd) throw new EdidEncodeError("colour formats", `YCbCr 4:2:2 needs an even width; ${odd.hActive} is odd`);
+  }
   const hdmi = intent.link !== "dvi";
   const displayId: Extension[] = displayIdTimings.length > 0 ? [displayIdSection(displayIdTimings)] : [];
 

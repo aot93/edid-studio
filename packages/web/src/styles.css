@@ -217,6 +217,16 @@ table.linktable td.r { text-align: right; }
 table.linktable td.fit { color: var(--pass); background: color-mix(in srgb, var(--pass) 9%, transparent); }
 table.linktable td.over { color: var(--error); background: color-mix(in srgb, var(--error) 9%, transparent); text-decoration: line-through; text-decoration-thickness: 1px; }
 table.linktable td.na { color: var(--muted); }
+table.linktable td.adv { box-shadow: inset 0 0 0 1px var(--border); font-weight: 600; }
+table.linktable td.likely { box-shadow: inset 0 0 0 2px var(--accent); }
+.pill.bad { color: var(--error); border-color: color-mix(in srgb, var(--error) 40%, transparent); }
+.linkbudget { margin-top: 16px; }
+.linkbudget ul.lb { list-style: none; margin: 8px 0 0; padding: 0; }
+.linkbudget li + li { border-top: 1px solid var(--line); }
+.linkbudget summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 6px 0; cursor: pointer; font-size: 0.84rem; }
+.linkbudget .lb-mode { font-weight: 600; }
+.linkbudget .lb-clock { font-family: var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.linkbudget details[open] summary { margin-bottom: 4px; }
 
 /* Forms */
 .form { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px 12px; }

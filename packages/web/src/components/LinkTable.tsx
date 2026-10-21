@@ -1,8 +1,17 @@
 import { DEPTHS, feasibility, FORMAT_NAMES, FORMATS, LINKS } from "@edid-studio/core";
-import type { Link } from "@edid-studio/core";
+import type { Feasibility, Link } from "@edid-studio/core";
+
+interface Props {
+  readonly pixelClockKHz: number;
+  readonly link: Link;
+  /** Cells the EDID advertises, outlined. */
+  readonly advertised?: readonly Feasibility[];
+  /** The likely driver choice, marked. */
+  readonly likely?: Feasibility | undefined;
+}
 
 /** Format x depth grid: the TMDS rate each needs and whether it fits the link (SPEC.md section 7). */
-export function LinkTable({ pixelClockKHz, link }: { readonly pixelClockKHz: number; readonly link: Link }) {
+export function LinkTable({ pixelClockKHz, link, advertised, likely }: Props) {
   const rows = feasibility(pixelClockKHz, link);
   return (
     <table className="linktable">
@@ -33,10 +42,20 @@ export function LinkTable({ pixelClockKHz, link }: { readonly pixelClockKHz: num
                   </td>
                 );
               }
+              const adv = advertised?.some((a) => a.format === f && a.depth === d) ?? false;
+              const pick = likely?.format === f && likely.depth === d;
               return (
-                <td key={d} className={`r ${r.fits ? "fit" : "over"}`} title={`${(r.rateKHz / 1000).toFixed(2)} MHz ${r.fits ? "fits" : "exceeds the limit"}`}>
+                <td
+                  key={d}
+                  className={`r ${r.fits ? "fit" : "over"}${adv ? " adv" : ""}${pick ? " likely" : ""}`}
+                  title={`${(r.rateKHz / 1000).toFixed(2)} MHz ${r.fits ? "fits" : "exceeds the limit"}${adv ? ", advertised" : ""}${pick ? ", likely choice" : ""}`}
+                >
                   {(r.rateKHz / 1000).toFixed(1)}
-                  <span className="sr-only">{r.fits ? " fits" : " too fast"}</span>
+                  <span className="sr-only">
+                    {r.fits ? " fits" : " too fast"}
+                    {adv ? ", advertised" : ""}
+                    {pick ? ", likely choice" : ""}
+                  </span>
                 </td>
               );
             })}

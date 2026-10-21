@@ -91,6 +91,10 @@ export interface ModeReport {
   readonly alternatives: readonly Feasibility[];
   /** Plain-language explanation, empty when everything advertised fits. */
   readonly message: string;
+  /** Every format and depth the EDID advertises for this mode, whether or not it fits. */
+  readonly advertised: readonly Feasibility[];
+  /** Likely driver choice (heuristic, see likelyChoice()); absent when nothing advertised fits. */
+  readonly likely?: Feasibility;
 }
 
 export interface AdvertisedColour {
@@ -114,6 +118,17 @@ export function linkReport(
   const limit = LINKS[link];
   return modes.map(({ mode, pixelClockKHz, supports420 }) => {
     const rows = feasibility(pixelClockKHz, link);
+    // What the EDID offers at this mode: RGB and 4:4:4 at the deep colour depths, 4:2:2 at any depth
+    // up to 12-bit (a 12-bit container; SPEC.md section 7), 4:2:0 only where the mode allows it.
+    const offers = (f: ColourFormat, d: Depth) => {
+      if (f === "rgb") return advertised.depths.includes(d);
+      if (!advertised.formats.includes(f)) return false;
+      if (f === "ycbcr444") return advertised.depths.includes(d);
+      if (f === "ycbcr422") return d <= 12;
+      return supports420 && advertised.depths420.includes(d);
+    };
+    const offered = rows.filter((r) => !r.unsupported && offers(r.format, r.depth));
+    const likely = likelyChoice(rows, offers);
     const tooFast = rows.filter((r) => r.format === "rgb" && advertised.depths.includes(r.depth) && !r.fits);
     // The lowest failing depth is the one a user most likely wants (10-bit over 8-bit).
     const first = tooFast.reduce<Feasibility | undefined>((a, r) => (a && a.depth < r.depth ? a : r), undefined);
@@ -134,6 +149,6 @@ export function linkReport(
           ? `${first.depth}-bit fits as ${alternatives.map((a) => `${FORMAT_NAMES[a.format]} (${(a.rateKHz / 1000).toFixed(2)} MHz)`).join(" or ")}.`
           : `No advertised format carries ${first.depth}-bit at this mode; expect the driver to fall back to 8-bit.`);
     }
-    return { mode, pixelClockKHz, tooFast, alternatives, message };
+    return { mode, pixelClockKHz, tooFast, alternatives, message, advertised: offered, ...(likely ? { likely } : {}) };
   });
 }

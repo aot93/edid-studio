@@ -120,3 +120,23 @@ test("edits base-block standard timings", async ({ page }) => {
   await page.getByRole("button", { name: "Add", exact: true }).click();
   await expect(page.locator(".std-row").first()).toContainText("1920x1080 @ 60 Hz (16:9)");
 });
+
+test("shows the link budget with the likely driver choice", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("Paste hex").fill(fixture("Tessera-EJE-test.txt"));
+  await page.getByRole("button", { name: "Load pasted hex" }).click();
+  const budget = page.locator(".linkbudget");
+  await expect(budget).toContainText("Timing 3840x2160 @ 60.000 Hz");
+  // The Tessera case: 10-bit RGB is advertised, but at 594 MHz only 8-bit RGB fits HDMI 2.0.
+  await expect(budget.locator("li", { hasText: "Timing 3840x2160 @ 60.000 Hz" }).locator(".pill")).toHaveText("likely 8-bit RGB");
+});
+
+test("looks up a VESA DMT timing and names the matching VIC", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Create a new EDID" }).click();
+  await page.getByLabel("Formula").selectOption("dmt");
+  await fill(page, { Width: "1920", Height: "1080", "Refresh (Hz)": "60" });
+  await expect(page.locator(".tresult")).toContainText("148.50 MHz");
+  await expect(page.locator(".tresult")).toContainText("VIC 16, 76");
+  await expect(page.locator(".tresult")).toContainText("DMT 0x52");
+});
