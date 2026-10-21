@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { byteDiff, describeDtd, edidLayout, LINKS, modeLabel, printable, serializeEdid } from "@edid-studio/core";
+import { byteDiff, describeDisplayIdTiming, describeDtd, edidLayout, LINKS, modeLabel, preferredDisplayIdTiming, printable, serializeEdid } from "@edid-studio/core";
 import type { LayoutNode, Link } from "@edid-studio/core";
 import { collectIssues, worstByNode } from "../issues.ts";
 import { monitorName, nodeAtOffset, nodeLabel, preferredTiming } from "../model-view.ts";
@@ -48,7 +48,9 @@ export function Workspace({ session, onEdit }: Props) {
   };
 
   const pref = preferredTiming(edid);
-  const prefInfo = pref?.kind === "dtd" ? describeDtd(pref) : undefined;
+  // A preferred DisplayID timing is the mode the EDID is built for; the base DTD is then its fallback.
+  const prefId = preferredDisplayIdTiming(edid);
+  const prefInfo = prefId ? describeDisplayIdTiming(prefId) : pref?.kind === "dtd" ? describeDtd(pref) : undefined;
   const name = monitorName(edid);
 
   return (
@@ -56,7 +58,7 @@ export function Workspace({ session, onEdit }: Props) {
       <div className="keyfacts">
         <div className="kf">
           <div className="n">{prefInfo ? modeLabel(prefInfo) : "none"}</div>
-          <div className="l">first detailed timing{prefInfo ? `, ${(prefInfo.pixelClockKHz / 1000).toFixed(2)} MHz pixel clock` : ""}</div>
+          <div className="l">{prefId ? "preferred DisplayID timing" : "first detailed timing"}{prefInfo ? `, ${(prefInfo.pixelClockKHz / 1000).toFixed(2)} MHz pixel clock` : ""}</div>
         </div>
         <div className="kf">
           <div className="n">{name === undefined ? "unnamed" : printable(name)}</div>

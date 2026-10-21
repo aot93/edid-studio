@@ -37,6 +37,25 @@ const clean = buildEdid({
   include640x480: true,
 });
 const cleanBytes = serializeEdid(clean);
+
+/** Clean too: 5760x1080 at 60 Hz in a DisplayID block, behind an EEODB, with a 1080p fallback. */
+const wideTiming = buildTiming({ hActive: 5760, vActive: 1080, refresh: "60", formula: "exact" }).displayId;
+if (!wideTiming) throw new Error("no DisplayID timing");
+const cleanWide = buildEdid({
+  name: "LED wall",
+  manufacturerId: "VYV",
+  productCode: 1,
+  year: 2026,
+  timing: dtd(1920, 1080, "60"),
+  displayIdTimings: [wideTiming],
+  link: "hdmi2.0",
+  formats: ["rgb"],
+  depths: [8],
+  include640x480: true,
+});
+const cleanWideBytes = serializeEdid(cleanWide);
+/** Byte offset of the DisplayID section checksum: block 2, after the 5 header bytes and the data blocks. */
+const wideSectionChecksum = 256 + 5 + (cleanWideBytes[258] ?? 0);
 const tessera = (f: string) => importEdid(readFileSync(join(FIXTURES_DIR, f), "utf8"));
 
 const cta = (e: Edid): CtaExtension => {
@@ -77,6 +96,9 @@ const CASES: Record<RuleId, Case> = {
   // One byte short: the offset lands inside the last data block.
   "cta.offset": { input: resum(patch(cleanBytes, 130, (cleanBytes[130] ?? 0) - 1)), fixable: false },
   "cta.padding": { input: resum(patch(cleanBytes, 254, 7)), fixable: false },
+  // A third block without the EEODB the builder adds.
+  "structure.block-map": { input: withBlocks(cleanWide, (bs) => bs.filter((b) => !(b.kind === "raw" && b.bytes[1] === 0x78))), fixable: true },
+  "displayid.section": { input: resum(patch(cleanWideBytes, wideSectionChecksum, (cleanWideBytes[wideSectionChecksum] ?? 0) ^ 1)), fixable: false },
   "descriptor.header": { input: withDescriptor(clean, 3, raw([0, 0, 1, 0x10])), fixable: false },
   "descriptor.tag": { input: withDescriptor(clean, 3, raw([0, 0, 0, 0x50])), fixable: false },
   "descriptor.all-zero": { input: withDescriptor(clean, 3, raw([])), fixable: true },
@@ -128,6 +150,10 @@ function issuesOf(input: Edid | Uint8Array) {
 describe("the clean baseline", () => {
   it("has no issues at all", () => {
     expect(validateBytes(cleanBytes).issues).toEqual([]);
+  });
+
+  it("nor does the 5760x1080 DisplayID build", () => {
+    expect(validateBytes(cleanWideBytes).issues).toEqual([]);
   });
 });
 

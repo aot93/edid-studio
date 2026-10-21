@@ -91,7 +91,8 @@ export function TimingEditor({ seed, link, onResult }: Props) {
   }, [width, height, refresh, formula, porches, hPos, vPos]);
 
   const result = "result" in outcome ? outcome.result : null;
-  useEffect(() => onResult(result?.dtd ? result : null), [result, onResult]);
+  // A timing is usable when it fits a DTD, or failing that a DisplayID Type I timing.
+  useEffect(() => onResult(result?.dtd || result?.displayId ? result : null), [result, onResult]);
 
   const switchFormula = (f: Formula) => {
     // Switching to manual starts from the porches currently shown.
@@ -208,17 +209,23 @@ export function TimingEditor({ seed, link, onResult }: Props) {
                 </div>
               </div>
               <div className="kf">
-                <div className="n">{result.dtd ? "Fits a DTD" : "Not a DTD"}</div>
+                <div className="n">{result.dtd ? "Fits a DTD" : result.displayId ? "DisplayID timing" : "Too large"}</div>
                 <div className="l">{(result.timing.hTotal - result.timing.hActive).toString()} px H blank · {(result.timing.vTotal - result.timing.vActive).toString()} lines V blank</div>
               </div>
             </div>
             {(result.dtdProblems.length > 0 || result.notes.length > 0) && (
               <ul className="issues">
                 {result.dtdProblems.map((p) => (
-                  <li key={p} className="error">
-                    {p}
+                  <li key={p} className={result.displayId ? "warning" : "error"}>
+                    {result.displayId ? `Not a DTD: ${p}` : p}
                   </li>
                 ))}
+                {!result.dtd &&
+                  result.displayIdProblems.map((p) => (
+                    <li key={`displayid-${p}`} className="error">
+                      DisplayID: {p}
+                    </li>
+                  ))}
                 {result.notes.map((n) => (
                   <li key={n} className="warning">
                     {n}

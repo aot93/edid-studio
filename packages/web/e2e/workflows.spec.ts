@@ -72,13 +72,40 @@ test("creates an EDID without uploading anything", async ({ page }) => {
   expect(cta?.kind === "cta" && cta.dataBlocks.find((b) => b.kind === "hdmiVsdb")).toMatchObject({ capabilities: { dc30bit: true, dc36bit: false } });
 });
 
-test("refuses a resolution a DTD cannot hold, by field name", async ({ page }) => {
+test("names the field when a timing does not fit a DTD, and offers DisplayID", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Create a new EDID" }).click();
   await page.getByLabel("Formula").selectOption("manual");
   await fill(page, { "H front porch": "1056", "H sync": "88", "H back porch": "296", "V front porch": "8", "V sync": "10", "V back porch": "72" });
   await expect(page.locator(".timing .issues")).toContainText("horizontal front porch 1056 exceeds 1023");
-  await expect(page.locator(".tresult")).toContainText("Not a DTD");
+  await expect(page.locator(".tresult")).toContainText("DisplayID timing");
+});
+
+test("creates a 5760x1080 EDID for an LED wall: DisplayID timing, 1080p fallback, EEODB", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Create a new EDID" }).click();
+  await fill(page, { Width: "5760", Height: "1080", "Refresh (Hz)": "60" });
+  await expect(page.locator(".tresult")).toContainText("DisplayID timing");
+  await expect(page.locator(".timing .issues")).toContainText("horizontal active 5760 exceeds 4095");
+  await page.getByRole("button", { name: "Create EDID" }).click();
+  await expect(page.locator(".issues li.error")).toHaveCount(0);
+
+  const { edid, bytes, checksumErrors } = importEdid(await download(page));
+  expect(checksumErrors).toEqual([]);
+  expect(bytes.length).toBe(384);
+  expect(edid.extensions.map((e) => e.kind)).toEqual(["cta", "displayid"]);
+  const id = edid.extensions[1];
+  const block = id?.kind === "displayid" ? id.dataBlocks[0] : undefined;
+  expect(block?.kind === "type1Timings" && block.timings.map((t) => [t.hActive, t.vActive])).toEqual([[5760, 1080]]);
+  const fallback = edid.base.descriptors[0];
+  expect(fallback?.kind === "dtd" && [fallback.hActive, fallback.vActive]).toEqual([1920, 1080]);
+});
+
+test("refuses a raster beyond what DisplayID can hold", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Create a new EDID" }).click();
+  await fill(page, { Width: "70000", Height: "1080" });
+  await expect(page.locator(".timing .alert")).toContainText("1 to 65536");
 });
 
 test("edits base-block standard timings", async ({ page }) => {

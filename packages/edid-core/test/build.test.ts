@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildEdid, buildTiming, encodeChromaticity, importEdid, parseEdid, serializeEdid, SRGB, structuralProblems } from "../src/index.ts";
+import { buildEdid, buildTiming, encodeChromaticity, importEdid, parseEdid, serializeEdid, SRGB, structuralProblems, validateEdid } from "../src/index.ts";
 import type { BuildIntent } from "../src/index.ts";
 
 const timing = (w: number, h: number, hz: string) => {
@@ -78,5 +78,56 @@ describe("buildEdid", () => {
     const bytes = serializeEdid(buildEdid({ ...intent, link: "dvi", timing: timing(1920, 1080, "60"), depths: [8] }));
     expect(bytes.length).toBe(128);
     expect(importEdid(bytes).checksumErrors).toEqual([]);
+  });
+
+  describe("with a DisplayID timing for a raster a DTD cannot hold (5760x1080)", () => {
+    const wide = buildTiming({ hActive: 5760, vActive: 1080, refresh: "60", formula: "exact" });
+    const fallback = timing(1920, 1080, "60");
+    if (!wide.displayId) throw new Error(wide.displayIdProblems.join("; "));
+    const hdmi = buildEdid({ ...intent, depths: [8], timing: fallback, displayIdTimings: [wide.displayId] });
+
+    it("HDMI: base, CTA and DisplayID; byte 126 is 1 and an EEODB first in block 1 declares 2 (EDID 1.3 with three blocks)", () => {
+      const bytes = serializeEdid(hdmi);
+      expect(bytes.length).toBe(384);
+      expect(bytes[126]).toBe(1);
+      expect(structuralProblems(bytes)).toEqual([]);
+      expect(parseEdid(bytes)).toEqual(hdmi);
+      expect(hdmi.extensions.map((e) => e.kind)).toEqual(["cta", "displayid"]);
+      const cta = hdmi.extensions[0];
+      if (cta?.kind !== "cta") throw new Error("no CTA");
+      // HDMI Forum EEODB: extended tag 0x78, one byte, the extension count (edid-decode cta_hf_eeodb()).
+      expect(cta.dataBlocks[0]).toEqual({ kind: "raw", bytes: [0xe2, 0x78, 2] });
+      expect([hdmi.base.version, hdmi.base.revision]).toEqual([1, 3]);
+    });
+
+    it("the DisplayID timing is preferred, the base block keeps the fallback", () => {
+      const id = hdmi.extensions[1];
+      if (id?.kind !== "displayid") throw new Error("no DisplayID");
+      expect(id).toMatchObject({ version: 0x12, productType: 5, extensionCount: 0 });
+      const block = id.dataBlocks[0];
+      expect(block?.kind === "type1Timings" && block.timings.map((t) => [t.hActive, t.vActive, t.flags & 0x80])).toEqual([[5760, 1080, 0x80]]);
+      expect(hdmi.base.descriptors[0]).toEqual(fallback);
+    });
+
+    it("TMDS rate, SCDC and range limits cover the DisplayID timing", () => {
+      const cta = hdmi.extensions[0];
+      if (cta?.kind !== "cta") throw new Error("no CTA");
+      expect(wide.timing.pixelClock10kHz * 10).toBeGreaterThan(340_000);
+      expect(cta.dataBlocks.find((b) => b.kind === "hdmiForumVsdb")).toMatchObject({ scdcPresent: true });
+      const range = hdmi.base.descriptors.find((d) => d.kind === "rangeLimits");
+      expect(range?.kind === "rangeLimits" && range.maxPixelClock10MHz * 10_000).toBeGreaterThanOrEqual(wide.timing.pixelClock10kHz * 10);
+      expect(validateEdid(hdmi).filter((i) => i.severity === "error")).toEqual([]);
+    });
+
+    it("DVI: base and DisplayID only, two blocks, no EEODB", () => {
+      const slow = buildTiming({ hActive: 5760, vActive: 1080, refresh: "24", formula: "cvt-rb2" }).displayId;
+      if (!slow) throw new Error("no DisplayID timing");
+      const dvi = buildEdid({ ...intent, link: "dvi", depths: [8], timing: timing(1920, 1080, "24"), displayIdTimings: [slow] });
+      const bytes = serializeEdid(dvi);
+      expect(bytes.length).toBe(256);
+      expect(bytes[126]).toBe(1);
+      expect(dvi.extensions.map((e) => e.kind)).toEqual(["displayid"]);
+      expect(parseEdid(bytes)).toEqual(dvi);
+    });
   });
 });

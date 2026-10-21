@@ -1,12 +1,15 @@
 // Builds an EDID from intent, without a base file (SPEC.md section 3,
 // workflow 2). The result is EDID 1.3, which the HDMI specification requires
-// (edid-decode fails HDMI sinks on 1.4), with one CTA-861 extension for HDMI.
+// (edid-decode fails HDMI sinks on 1.4), with one CTA-861 extension for HDMI
+// and a DisplayID extension for timings a DTD cannot hold.
 
 import { encodeManufacturerId } from "./base-block.ts";
+import { EXT_HF_EEODB } from "./cta.ts";
+import { displayIdSection } from "./displayid.ts";
 import { EdidEncodeError } from "./errors.ts";
 import { tmdsRateKHz } from "./link.ts";
 import type { ColourFormat, Depth, Link } from "./link.ts";
-import type { CtaExtension, DataBlock, Descriptor, DetailedTimingDescriptor, Edid } from "./model.ts";
+import type { CtaExtension, DataBlock, Descriptor, DetailedTimingDescriptor, DisplayIdTiming, Edid, Extension } from "./model.ts";
 import { autoRangeLimits, setColor, setMonitorName, setRangeLimits } from "./ops.ts";
 
 export interface Chromaticity {
@@ -45,6 +48,13 @@ export interface BuildIntent {
   readonly timing: DetailedTimingDescriptor;
   /** Further timings, if any (one fits in the base block, more go in the CTA block). */
   readonly extraTimings?: readonly DetailedTimingDescriptor[];
+  /**
+   * Timings a DTD cannot hold (wider or taller than 4095, or a clock above
+   * 655.35 MHz), for a DisplayID extension block; the first is preferred.
+   * `timing` stays in the base block as the fallback for sources that
+   * ignore DisplayID.
+   */
+  readonly displayIdTimings?: readonly DisplayIdTiming[];
   readonly link: Link;
   readonly formats: readonly ColourFormat[];
   readonly depths: readonly Depth[];
@@ -68,6 +78,11 @@ export interface BuildIntent {
  *   an HDMI Forum VSDB with SCDC when any mode needs more than 340 MHz, and a
  *   video capability block. No VICs are listed: the Tessera case showed a
  *   driver can choose a standard VIC the link cannot carry at the chosen depth.
+ * - with DisplayID timings: a DisplayID extension after the CTA block. EDID
+ *   1.3 allows a third block only with a block map or an HDMI Forum EEODB
+ *   (edid-decode check_base_block()); this uses the EEODB, so byte 126 says 1
+ *   and sources that do not read the EEODB see a sound two-block EDID with
+ *   the fallback timing. TODO(verify): NVIDIA drivers read the EEODB.
  */
 export function buildEdid(intent: BuildIntent): Edid {
   if (!Number.isInteger(intent.year) || intent.year < 1990 || intent.year > 2245) {
@@ -80,7 +95,9 @@ export function buildEdid(intent: BuildIntent): Edid {
     throw new EdidEncodeError("colour formats", "4:2:0 can only be declared for VICs, not for a custom detailed timing");
   }
   const timings = [intent.timing, ...(intent.extraTimings ?? [])];
+  const displayIdTimings = intent.displayIdTimings ?? [];
   const hdmi = intent.link !== "dvi";
+  const displayId: Extension[] = displayIdTimings.length > 0 ? [displayIdSection(displayIdTimings)] : [];
 
   // Byte 24 (EDID 1.3): display type RGB colour in bits 4-3 (01), sRGB
   // default colour space bit 2, preferred timing bit 1.
@@ -113,8 +130,11 @@ export function buildEdid(intent: BuildIntent): Edid {
   };
 
   if (hdmi) {
-    const worst = Math.max(...timings.map((t) => Math.max(...intent.depths.map((d) => tmdsRateKHz(t.pixelClock10kHz * 10, "rgb", d)))));
+    const clocks = [...timings, ...displayIdTimings].map((t) => t.pixelClock10kHz * 10);
+    const worst = Math.max(...clocks.map((c) => Math.max(...intent.depths.map((d) => tmdsRateKHz(c, "rgb", d)))));
     const dataBlocks: DataBlock[] = [
+      // HDMI Forum EEODB, first data block of block 1: extended tag 0x78, the real extension count (edid-decode cta_hf_eeodb()).
+      ...(displayId.length > 0 ? [{ kind: "raw", bytes: [(7 << 5) | 2, EXT_HF_EEODB, 1 + displayId.length] } as const] : []),
       {
         kind: "hdmiVsdb",
         physicalAddress: 0x1000,
@@ -159,9 +179,11 @@ export function buildEdid(intent: BuildIntent): Edid {
       dataBlocks,
       descriptors: rest,
     };
-    edid = { ...edid, extensions: [cta] };
+    edid = { ...edid, extensions: [cta, ...displayId] };
   } else if (rest.length > 0) {
     throw new EdidEncodeError("timings", "DVI EDIDs here hold at most two timings");
+  } else {
+    edid = { ...edid, extensions: displayId };
   }
 
   edid = setColor(edid, intent.formats, intent.depths);

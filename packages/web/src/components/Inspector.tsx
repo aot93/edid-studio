@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import {
+  describeDisplayIdTiming,
   describeDtd,
   lookupVic,
   manufacturerId,
@@ -14,8 +15,8 @@ import {
   setHf420DeepColour,
   setMonitorName,
 } from "@edid-studio/core";
-import type { DetailedTimingDescriptor, Descriptor, Edid, LayoutNode } from "@edid-studio/core";
-import { ctaAt, dataBlockAt, descriptorAt, hex, nodeLabel, svdLabel } from "../model-view.ts";
+import type { DetailedTimingDescriptor, Descriptor, DisplayIdTiming, Edid, LayoutNode } from "@edid-studio/core";
+import { ctaAt, dataBlockAt, descriptorAt, displayIdAt, displayIdBlockAt, hex, nodeLabel, svdLabel } from "../model-view.ts";
 import { ColourForm, EstablishedTimingsEditor, RangeLimitsEditor, StandardTimingsEditor } from "./BaseEditors.tsx";
 
 export type EditFn = (label: string, edit: (edid: Edid) => Edid) => string | null;
@@ -53,6 +54,34 @@ function Check({ label, checked, onChange }: { readonly label: string; readonly 
       <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
       {label}
     </label>
+  );
+}
+
+/** DisplayID 1.x product types (edid-decode product_type()). */
+const PRODUCT_TYPES: Record<number, string> = {
+  0: "Extension section",
+  1: "Test structure",
+  2: "Display panel",
+  3: "Standalone display",
+  4: "Television",
+  5: "Repeater / translator",
+  6: "Direct-drive monitor",
+};
+
+function DisplayIdTimingView({ t }: { readonly t: DisplayIdTiming }) {
+  const i = describeDisplayIdTiming(t);
+  return (
+    <Fields
+      rows={[
+        ["Mode", `${modeLabel(i)}${t.flags & 0x80 ? " (preferred)" : ""}`],
+        ["Pixel clock", mhz(i.pixelClockKHz)],
+        ["Total", `${i.hTotal} x ${i.vTotal}`],
+        ["H front / sync / back", `${t.hFrontPorch} / ${t.hSync} / ${i.hBackPorch}`],
+        ["V front / sync / back", `${t.vFrontPorch} / ${t.vSync} / ${i.vBackPorch}`],
+        ["Polarity", `H${t.hSyncPositive ? "+" : "-"} V${t.vSyncPositive ? "+" : "-"}`],
+        ["Refresh (exact)", `${i.refreshHz.toFixed(6)} Hz`],
+      ]}
+    />
   );
 }
 
@@ -210,6 +239,44 @@ export function Inspector({ edid, bytes, node, onEdit, onTiming }: Props) {
         </>
       );
     }
+  } else if (r.type === "displayIdHeader") {
+    const id = displayIdAt(edid, r.extension);
+    if (id) {
+      body = (
+        <>
+          <Fields
+            rows={[
+              ["Version", `${id.version >> 4}.${id.version & 0xf}`],
+              [id.version < 0x20 ? "Product type" : "Primary use", id.version < 0x20 ? (PRODUCT_TYPES[id.productType] ?? `0x${hex(id.productType)}`) : `0x${hex(id.productType)}`],
+              ["Extension sections", String(id.extensionCount)],
+            ]}
+          />
+          <p className="note">Carries timings a detailed timing descriptor cannot hold: up to 65536 x 65536 and clocks above 655.35 MHz.</p>
+          <div className="row">
+            <button className="btn small" onClick={() => onTiming({ mode: "add" })}>
+              Add a timing
+            </button>
+          </div>
+        </>
+      );
+    }
+  } else if (r.type === "displayIdBlock") {
+    const b = displayIdBlockAt(edid, r);
+    if (b?.kind === "type1Timings") {
+      body = (
+        <>
+          {b.timings.map((t, i) => (
+            <DisplayIdTimingView key={i} t={t} />
+          ))}
+        </>
+      );
+    } else if (b) {
+      body = <p className="note">Kept byte for byte; not decoded.</p>;
+    }
+  } else if (r.type === "displayIdFiller") {
+    body = <p className="note">Zero bytes inside the DisplayID section after its data blocks.</p>;
+  } else if (r.type === "displayIdChecksum") {
+    body = <p className="note">Makes bytes 1 to here of the DisplayID section sum to zero. Written by EDID Studio on every export.</p>;
   } else if (r.type === "dataBlock") {
     body = <DataBlockView edid={edid} extension={r.extension} index={r.index} edit={edit} />;
   } else if (r.type === "extensionCount") {

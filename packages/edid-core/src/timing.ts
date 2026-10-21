@@ -6,8 +6,12 @@
 // Known-answer tests compare against edid-decode --cvt.
 
 import { serializeDescriptor } from "./descriptors.ts";
+import { displayIdTimingProblems } from "./displayid.ts";
 import { EdidEncodeError } from "./errors.ts";
-import type { DetailedTimingDescriptor } from "./model.ts";
+import type { DetailedTimingDescriptor, DisplayIdTiming } from "./model.ts";
+
+/** Largest active size any encoding here holds: DisplayID Type I's 16 bits, stored minus one. */
+export const MAX_ACTIVE = 65536;
 
 /** A refresh rate as an exact fraction, so 59.94 Hz can be 60000/1001. */
 export interface Rational {
@@ -75,6 +79,10 @@ export interface TimingResult {
   readonly dtd?: DetailedTimingDescriptor;
   /** Field-limit failures, each naming the field, e.g. "horizontal front porch 1056 exceeds 1023". */
   readonly dtdProblems: readonly string[];
+  /** The DisplayID Type I timing; present only when every field fits. Carries rasters a DTD cannot. */
+  readonly displayId?: DisplayIdTiming;
+  /** Type I field-limit failures, by field name. */
+  readonly displayIdProblems: readonly string[];
   /** Warnings and suggestions in plain language. */
   readonly notes: readonly string[];
 }
@@ -114,13 +122,13 @@ function checkRequest(req: TimingRequest): void {
     ["horizontal active", req.hActive],
     ["vertical active", req.vActive],
   ] as const) {
-    if (!Number.isInteger(v) || v < 1 || v > 16384) {
-      throw new EdidEncodeError(name, `${name} ${v} must be a whole number from 1 to 16384`);
+    if (!Number.isInteger(v) || v < 1 || v > MAX_ACTIVE) {
+      throw new EdidEncodeError(name, `${name} ${v} must be a whole number from 1 to ${MAX_ACTIVE}`);
     }
   }
   if (req.porches) {
     for (const [k, v] of Object.entries(req.porches)) {
-      if (!Number.isInteger(v) || v < 0 || v > 16384) throw new EdidEncodeError(k, `${k} ${v} must be a whole number from 0`);
+      if (!Number.isInteger(v) || v < 0 || v > MAX_ACTIVE) throw new EdidEncodeError(k, `${k} ${v} must be a whole number from 0`);
     }
   }
 }
@@ -199,7 +207,23 @@ export function buildTiming(req: TimingRequest): TimingResult {
     flags: 0x18 | (vPos ? 0x04 : 0) | (hPos ? 0x02 : 0),
   };
   const dtdProblems = dtdFieldProblems(candidate);
-  if (dtdProblems.length > 0) notes.push(...suggestionsFor(candidate));
+  // DisplayID Type I (edid-decode parse_displayid_type_1_7_timing()): same 10 kHz clock unit, preferred flag set by the builder.
+  const displayIdCandidate: DisplayIdTiming = {
+    pixelClock10kHz,
+    flags: 0,
+    hActive: req.hActive,
+    hBlank: hTotal - req.hActive,
+    hFrontPorch: porches.hFrontPorch,
+    hSync: porches.hSync,
+    hSyncPositive: hPos,
+    vActive: req.vActive,
+    vBlank: vTotal - req.vActive,
+    vFrontPorch: porches.vFrontPorch,
+    vSync: porches.vSync,
+    vSyncPositive: vPos,
+  };
+  const displayIdProblems = displayIdTimingProblems(displayIdCandidate);
+  if (dtdProblems.length > 0) notes.push(...suggestionsFor(candidate, displayIdProblems.length === 0));
 
   return {
     request: req,
@@ -211,6 +235,8 @@ export function buildTiming(req: TimingRequest): TimingResult {
     exact,
     ...(dtdProblems.length === 0 ? { dtd: candidate } : {}),
     dtdProblems,
+    ...(displayIdProblems.length === 0 ? { displayId: displayIdCandidate } : {}),
+    displayIdProblems,
     notes,
   };
 }
@@ -245,10 +271,12 @@ export function dtdFieldProblems(d: DetailedTimingDescriptor): string[] {
   return problems;
 }
 
-function suggestionsFor(d: DetailedTimingDescriptor): string[] {
+function suggestionsFor(d: DetailedTimingDescriptor, fitsDisplayId: boolean): string[] {
   const out: string[] = [];
-  if (d.pixelClock10kHz > 65535) {
-    out.push("Try reduced blanking, a lower refresh rate or a smaller raster; a DisplayID timing (v1.1) can carry higher clocks.");
+  if (fitsDisplayId) {
+    out.push("This timing goes in a DisplayID extension block instead of a DTD; sources that ignore DisplayID use the fallback timing in the base block.");
+  } else if (d.pixelClock10kHz > 65535) {
+    out.push("Try reduced blanking, a lower refresh rate or a smaller raster.");
   }
   if (d.hFrontPorch > 1023 || d.hBlank > 4095 || d.vFrontPorch > 63) {
     out.push("Try reduced blanking (the exact-refresh or CVT-RB formulas), which keeps porches small.");

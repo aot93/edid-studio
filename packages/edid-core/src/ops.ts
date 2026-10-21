@@ -3,6 +3,8 @@
 
 import { decodeStandardTiming, ESTABLISHED_TIMINGS, isEstablishedSet } from "./base-timings.ts";
 import { describeDtd, lookupVic } from "./describe.ts";
+import { EXT_HF_EEODB } from "./cta.ts";
+import { describeDisplayIdTiming, displayIdSection, displayIdTimings, TYPE1_PREFERRED } from "./displayid.ts";
 import { EdidEncodeError } from "./errors.ts";
 import type { ColourFormat, Depth } from "./link.ts";
 import type {
@@ -10,6 +12,8 @@ import type {
   DataBlock,
   Descriptor,
   DetailedTimingDescriptor,
+  DisplayIdDataBlock,
+  DisplayIdTiming,
   Edid,
   HdmiForumVsdb,
   HdmiVsdbCapabilities,
@@ -256,6 +260,52 @@ export function addDetailedTiming(edid: Edid, dtd: DetailedTimingDescriptor): Ed
   return mapCta(edid, (cta, i) => (i === first ? { ...cta, descriptors: [...cta.descriptors, dtd] } : cta));
 }
 
+/**
+ * Adds a DisplayID Type I timing, for rasters a DTD cannot hold, as the
+ * preferred DisplayID timing. Appends to the first typed DisplayID section,
+ * or adds a section after the last extension. On EDID 1.3 a third block
+ * needs an HDMI Forum EEODB in block 1 (edid-decode check_base_block()), so
+ * one is added or its count updated; the base block's DTD stays as the
+ * fallback for sources that ignore DisplayID.
+ */
+export function addDisplayIdTiming(edid: Edid, timing: DisplayIdTiming): Edid {
+  const added = { ...timing, flags: timing.flags | TYPE1_PREFERRED };
+  // Bit 7 means preferred only below block revision 2 (edid-decode parse_displayid_type_1_7_timing()).
+  const unprefer = (b: DisplayIdDataBlock): DisplayIdDataBlock =>
+    b.kind === "type1Timings" && (b.revision & 0x07) < 2 ? { ...b, timings: b.timings.map((t) => ({ ...t, flags: t.flags & ~TYPE1_PREFERRED })) } : b;
+  const at = edid.extensions.findIndex((e) => e.kind === "displayid");
+  const extensions =
+    at === -1
+      ? [...edid.extensions, displayIdSection([added])]
+      : edid.extensions.map((e, i) => {
+          if (e.kind !== "displayid") return e;
+          const blocks = e.dataBlocks.map(unprefer);
+          if (i !== at) return { ...e, dataBlocks: blocks };
+          const t1 = blocks.findIndex((b) => b.kind === "type1Timings" && (b.revision & 0x07) < 2);
+          const grown: DisplayIdDataBlock[] =
+            t1 === -1
+              ? [...blocks, { kind: "type1Timings", revision: 0, timings: [added] }]
+              : blocks.map((b, j) => (j === t1 && b.kind === "type1Timings" ? { ...b, timings: [...b.timings, added] } : b));
+          // Zero filler inside the section makes room first, so a full 121-byte section stays 121 bytes.
+          return { ...e, dataBlocks: grown, filler: Math.max(0, e.filler - (t1 === -1 ? 23 : 20)) };
+        });
+  return withEeodb({ ...edid, extensions });
+}
+
+/** Keeps an HDMI Forum EEODB in block 1 in step with the extension count, adding one where EDID 1.3 needs it. */
+function withEeodb(edid: Edid): Edid {
+  const first = edid.extensions[0];
+  if (first?.kind !== "cta") return edid;
+  const count = edid.extensions.length;
+  const isEeodb = (b: DataBlock) => b.kind === "raw" && (b.bytes[0] ?? 0) >> 5 === 7 && b.bytes[1] === EXT_HF_EEODB;
+  const eeodb: DataBlock = { kind: "raw", bytes: [(7 << 5) | 2, EXT_HF_EEODB, count] };
+  let dataBlocks = first.dataBlocks;
+  if (dataBlocks.some(isEeodb)) dataBlocks = dataBlocks.map((b) => (isEeodb(b) ? eeodb : b));
+  else if (edid.base.version === 1 && edid.base.revision === 3 && count > 1) dataBlocks = [eeodb, ...dataBlocks];
+  else return edid;
+  return { ...edid, extensions: [{ ...first, dataBlocks }, ...edid.extensions.slice(1)] };
+}
+
 /** Replaces the descriptor at a base slot or a CTA descriptor index. */
 export function replaceDescriptor(edid: Edid, where: { readonly extension?: number; readonly index: number }, d: Descriptor): Edid {
   if (where.extension === undefined) {
@@ -366,8 +416,8 @@ export function setRangeLimits(edid: Edid, spec: RangeLimitsSpec): Edid {
 }
 
 /**
- * Range limits that cover every established timing, detailed timing and
- * listed VIC, plus the refresh of every standard timing: vertical
+ * Range limits that cover every established timing, detailed timing
+ * (DisplayID Type I included) and listed VIC, plus the refresh of every standard timing: vertical
  * and horizontal rates rounded outward, maximum clock rounded up to 10 MHz
  * (SPEC.md section 8).
  */
@@ -377,9 +427,8 @@ export function autoRangeLimits(edid: Edid, gtf: RangeLimitsSpec["gtf"] = "none"
     if (isEstablishedSet(edid.base.establishedTimings, t)) modes.push({ clockKHz: t.clockKHz, hKHz: t.hKHz, refreshHz: t.refreshHz });
   }
   const dtds = [...edid.base.descriptors, ...edid.extensions.flatMap((e) => (e.kind === "cta" ? e.descriptors : []))];
-  for (const d of dtds) {
-    if (d.kind !== "dtd") continue;
-    const info = describeDtd(d);
+  const infos = [...dtds.flatMap((d) => (d.kind === "dtd" ? [describeDtd(d)] : [])), ...displayIdTimings(edid).map(describeDisplayIdTiming)];
+  for (const info of infos) {
     modes.push({ clockKHz: info.pixelClockKHz, hKHz: info.pixelClockKHz / info.hTotal, refreshHz: info.refreshHz });
   }
   for (const e of edid.extensions) {

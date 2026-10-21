@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { buildEdid, EdidEncodeError, EdidExportError, LINKS, serializeEdid, importEdid } from "@edid-studio/core";
+import { buildEdid, buildTiming, EdidEncodeError, EdidExportError, LINKS, serializeEdid, importEdid } from "@edid-studio/core";
 import type { Depth, ImportedEdid, Link, TimingResult } from "@edid-studio/core";
 import { DEFAULT_SEED, TimingEditor } from "./TimingEditor.tsx";
 
@@ -8,6 +8,9 @@ interface Props {
 }
 
 const DEPTH_CHOICES: readonly Depth[] = [10, 12, 16];
+
+/** Base-block timing for sources that ignore DisplayID: 1920x1080 at the requested refresh. */
+const FALLBACK = { hActive: 1920, vActive: 1080 } as const;
 
 export function NewView({ onCreated }: Props) {
   const [name, setName] = useState("LED wall");
@@ -24,8 +27,8 @@ export function NewView({ onCreated }: Props) {
   const dvi = link === "dvi";
   const create = () => {
     setError(null);
-    if (!timing?.dtd) {
-      setError("Fix the timing first: it must fit a detailed timing descriptor.");
+    if (!timing || (!timing.dtd && !timing.displayId)) {
+      setError("Fix the timing first: it must fit a detailed timing descriptor or a DisplayID timing.");
       return;
     }
     const productCode = Number(product);
@@ -34,12 +37,20 @@ export function NewView({ onCreated }: Props) {
       return;
     }
     try {
+      // A raster a DTD cannot hold goes in a DisplayID block, with a fallback DTD in the base block.
+      const fallback = timing.dtd ? undefined : buildTiming({ ...FALLBACK, refresh: timing.request.refresh, formula: "exact" }).dtd;
+      const baseTiming = timing.dtd ?? fallback;
+      if (!baseTiming) {
+        setError("No fallback timing fits a DTD at this refresh rate.");
+        return;
+      }
       const edid = buildEdid({
         name,
         manufacturerId: manufacturer.toUpperCase(),
         productCode,
         year: new Date().getFullYear(),
-        timing: timing.dtd,
+        timing: baseTiming,
+        ...(timing.dtd || !timing.displayId ? {} : { displayIdTimings: [timing.displayId] }),
         link,
         formats: dvi ? ["rgb"] : ["rgb", ...(ycc444 ? (["ycbcr444"] as const) : []), ...(ycc422 ? (["ycbcr422"] as const) : [])],
         depths: dvi ? [8] : depths,
@@ -69,6 +80,13 @@ export function NewView({ onCreated }: Props) {
         <div className="card">
           <h2 className="section">Resolution and timing</h2>
           <TimingEditor seed={DEFAULT_SEED} link={link} onResult={setTiming} />
+          {timing && !timing.dtd && (
+            <p className="hint">
+              This raster is too large for a detailed timing descriptor, so it goes in a DisplayID extension block as the preferred
+              timing. The base block keeps {FALLBACK.hActive}x{FALLBACK.vActive} at the same refresh for sources that ignore
+              DisplayID.{link === "dvi" ? "" : " An HDMI Forum EEODB in the CTA block tells sources there is a third block."}
+            </p>
+          )}
         </div>
 
         <div className="stack">

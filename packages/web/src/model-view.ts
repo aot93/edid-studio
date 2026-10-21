@@ -1,12 +1,59 @@
 // Turns model nodes into labels and lookups for the UI. All EDID text goes
 // through printable() and is rendered as React text, never as HTML.
 
-import { describeDtd, lookupVic, manufacturerId, modeLabel, printable } from "@edid-studio/core";
-import type { CtaExtension, DataBlock, Descriptor, Edid, LayoutNode, NodeRef } from "@edid-studio/core";
+import { describeDisplayIdTiming, describeDtd, lookupVic, manufacturerId, modeLabel, printable } from "@edid-studio/core";
+import type { CtaExtension, DataBlock, Descriptor, DisplayIdDataBlock, DisplayIdExtension, Edid, LayoutNode, NodeRef } from "@edid-studio/core";
 
 export function ctaAt(edid: Edid, extension: number): CtaExtension | undefined {
   const e = edid.extensions[extension];
   return e?.kind === "cta" ? e : undefined;
+}
+
+export function displayIdAt(edid: Edid, extension: number): DisplayIdExtension | undefined {
+  const e = edid.extensions[extension];
+  return e?.kind === "displayid" ? e : undefined;
+}
+
+export function displayIdBlockAt(edid: Edid, ref: NodeRef): DisplayIdDataBlock | undefined {
+  return ref.type === "displayIdBlock" ? displayIdAt(edid, ref.extension)?.dataBlocks[ref.index] : undefined;
+}
+
+/** DisplayID 1.3 and 2.0 data block tags (edid-decode displayid_block()). */
+const DISPLAYID_TAGS: Record<number, string> = {
+  0x00: "Product identification",
+  0x01: "Display parameters",
+  0x02: "Colour characteristics",
+  0x03: "Type I detailed timings",
+  0x04: "Type II detailed timings",
+  0x05: "Type III short timings",
+  0x06: "Type IV DMT timings",
+  0x07: "VESA DMT timings",
+  0x08: "CTA-861 timings",
+  0x09: "Video timing range",
+  0x0a: "Product serial number",
+  0x0b: "ASCII string",
+  0x0c: "Display device data",
+  0x0f: "Display interface",
+  0x12: "Tiled display topology",
+  0x20: "Product identification (2.0)",
+  0x21: "Display parameters (2.0)",
+  0x22: "Type VII detailed timings",
+  0x26: "Display interface features",
+  0x28: "Tiled display topology (2.0)",
+  0x29: "ContainerID",
+  0x2b: "Adaptive sync",
+  0x7e: "Vendor-specific (2.0)",
+  0x7f: "Vendor-specific",
+  0x81: "CTA-861 data",
+};
+
+export function displayIdBlockLabel(b: DisplayIdDataBlock): string {
+  if (b.kind === "type1Timings") {
+    const first = b.timings[0];
+    return b.timings.length === 1 && first ? `Timing ${modeLabel(describeDisplayIdTiming(first))}` : `Type I detailed timings (${b.timings.length})`;
+  }
+  const tag = b.bytes[0] ?? 0;
+  return DISPLAYID_TAGS[tag] ?? `DisplayID block 0x${hex(tag)}`;
 }
 
 export function descriptorAt(edid: Edid, ref: NodeRef): Descriptor | undefined {
@@ -80,7 +127,9 @@ export function nodeLabel(edid: Edid, node: LayoutNode): string {
     case "block": {
       if (r.block === 0) return "Block 0 · Base EDID";
       const ext = edid.extensions[r.block - 1];
-      return `Block ${r.block} · ${ext?.kind === "cta" ? "CTA-861" : extensionName(ext?.bytes[0])}`;
+      if (ext?.kind === "cta") return `Block ${r.block} · CTA-861`;
+      if (ext?.kind === "displayid") return `Block ${r.block} · DisplayID ${ext.version >> 4}.${ext.version & 0xf}`;
+      return `Block ${r.block} · ${extensionName(ext?.bytes[0])}`;
     }
     case "baseHeader":
       return "Header";
@@ -111,6 +160,16 @@ export function nodeLabel(edid: Edid, node: LayoutNode): string {
       const b = dataBlockAt(edid, r);
       return b ? dataBlockLabel(b) : "Data block";
     }
+    case "displayIdHeader":
+      return "DisplayID header";
+    case "displayIdBlock": {
+      const b = displayIdBlockAt(edid, r);
+      return b ? displayIdBlockLabel(b) : "DisplayID data block";
+    }
+    case "displayIdFiller":
+      return "Filler";
+    case "displayIdChecksum":
+      return "DisplayID checksum";
     case "padding":
       return "Padding";
     case "rawExtension":
@@ -134,7 +193,7 @@ function extensionName(tag: number | undefined): string {
 /** True when the node is kept as raw bytes rather than decoded. */
 export function isRaw(edid: Edid, ref: NodeRef): boolean {
   if (ref.type === "rawExtension") return true;
-  return descriptorAt(edid, ref)?.kind === "raw" || dataBlockAt(edid, ref)?.kind === "raw";
+  return descriptorAt(edid, ref)?.kind === "raw" || dataBlockAt(edid, ref)?.kind === "raw" || displayIdBlockAt(edid, ref)?.kind === "raw";
 }
 
 export function svdLabel(vic: number): string {

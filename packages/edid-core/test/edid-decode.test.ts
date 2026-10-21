@@ -61,6 +61,8 @@ const MIRRORS: Partial<Record<RuleId, RegExp>> = {
   "base.range-limits-missing": /Missing Display Range Limits Descriptor/,
   "range.covers-timings": /out of range of the Monitor Ranges/,
   "cta.byte3-consistent": /Byte 3 must be the same/,
+  "structure.block-map": /EDID 1\.3 requires a Block Map Extension in Block 1/,
+  "displayid.section": /DisplayID length \d+ is greater than 121|exceeds the number of bytes remaining|Non-0 filler bytes in the DisplayID block|DisplayID filler is non-0/,
 };
 
 /**
@@ -70,8 +72,6 @@ const MIRRORS: Partial<Record<RuleId, RegExp>> = {
  */
 const KNOWN: Record<string, readonly RuleId[]> = {
   "acer-xv273k-dp2-corrupted": ["hdmi.vsdb-tmds", "svd.duplicate", "hdmi.edid-version"], // corrupted CTA blocks are kept raw
-  "acer-xv273k-corrected_difdb": ["range.covers-timings"], // the fastest timing is in a DisplayID block
-  "dell-up2715k-dp-switchresx": ["range.covers-timings"], // the fastest timing is in a DisplayID block
   "sharp-pn465-dvi": ["range.covers-timings"], // a 50 Hz timing is in a CTA revision 1 block
 };
 
