@@ -210,7 +210,11 @@ export function TimingEditor({ seed, link, onResult }: Props) {
               </div>
               <div className="kf">
                 <div className="n">{result.dtd ? "Fits a DTD" : result.displayId ? "DisplayID timing" : "Too large"}</div>
-                <div className="l">{(result.timing.hTotal - result.timing.hActive).toString()} px H blank · {(result.timing.vTotal - result.timing.vActive).toString()} lines V blank</div>
+                <div className="l">
+                  {(result.timing.hTotal - result.timing.hActive).toString()} px H blank · {(result.timing.vTotal - result.timing.vActive).toString()} lines V blank
+                  {result.encodings.vics.length > 0 && ` · VIC ${result.encodings.vics.join(", ")}`}
+                  {result.encodings.dmts.length > 0 && ` · DMT ${result.encodings.dmts.map((d) => `0x${d.toString(16).padStart(2, "0")}`).join(", ")}`}
+                </div>
               </div>
             </div>
             {(result.dtdProblems.length > 0 || result.notes.length > 0) && (

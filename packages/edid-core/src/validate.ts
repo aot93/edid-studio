@@ -20,7 +20,7 @@ import { feasibility, LINKS, tmdsRateKHz } from "./link.ts";
 import type { Link } from "./link.ts";
 import type { NodeRef } from "./layout.ts";
 import type { CtaExtension, DataBlock, Descriptor, Edid, HdmiVsdb } from "./model.ts";
-import { autoRangeLimits, makePreferred, removeHdmiVideo, removeSvd, setHdmiDeepColour, setHf420DeepColour, setRangeLimits, setStandardTimings } from "./ops.ts";
+import { autoRangeLimits, makePreferred, removeHdmiVideo, removeSvd, setCtaYcbcr, setHdmiDeepColour, setHf420DeepColour, setRangeLimits, setStandardTimings } from "./ops.ts";
 
 export type Severity = "error" | "warning" | "info";
 
@@ -85,6 +85,7 @@ export const RULES = {
   "color.y444-flag": { tier: 2, severity: "error", title: "DC_Y444 needs YCbCr 4:4:4 support" },
   "color.y444-depth": { tier: 2, severity: "warning", title: "DC_Y444 needs a deep colour depth" },
   "color.420-depth": { tier: 2, severity: "warning", title: "4:2:0 deep colour needs 4:2:0 modes" },
+  "color.subsampled-odd": { tier: 2, severity: "error", title: "YCbCr 4:2:2 is not declared with an odd-width timing" },
   "link.too-fast": { tier: 3, severity: "warning", title: "Advertised depths fit the link at every mode" },
   "link.depth-unusable": { tier: 3, severity: "warning", title: "Every advertised depth is usable at some mode" },
 } as const satisfies Record<string, RuleInfo>;
@@ -555,6 +556,24 @@ function ctaRules(edid: Edid): Issue[] {
         );
       }
     });
+  }
+
+  // 4:2:2 carries one chroma sample per pixel pair, so every line needs an even width (SPEC.md section 6).
+  // The CTA flag covers every mode; 4:2:0 applies to VICs only, whose rasters are all even.
+  if (blocks.some(({ cta }) => cta.ycbcr422)) {
+    const widths = [
+      ...[...edid.base.descriptors, ...blocks.flatMap(({ cta }) => cta.descriptors)].flatMap((d) => (d.kind === "dtd" ? [d.hActive] : [])),
+      ...displayIdTimings(edid).map((t) => t.hActive),
+    ];
+    const odd = [...new Set(widths.filter((w) => w % 2 === 1))];
+    if (odd.length > 0) {
+      out.push(
+        issue("color.subsampled-odd", `YCbCr 4:2:2 is declared, but ${odd.join(", ")} pixel${odd.length > 1 ? " widths are" : " width is"} odd; 4:2:2 shares colour between pixel pairs.`, {
+          where: { type: "ctaHeader", extension: blocks[0]?.extension ?? 0 },
+          fix: { label: "Stop declaring YCbCr 4:2:2", apply: (e) => setCtaYcbcr(e, { ycbcr422: false }) },
+        }),
+      );
+    }
   }
 
   const vga = ESTABLISHED_TIMINGS.find((t) => t.label === "640x480 @ 60 Hz");

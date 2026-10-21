@@ -134,6 +134,8 @@ const CASES: Record<RuleId, Case> = {
     input: withCta(withVsdb(clean, (b) => ({ ...b, capabilities: { ...(b.capabilities ?? fail()), dcY444: true, dc30bit: false } })), (c) => ({ ...c, ycbcr444: true })),
     fixable: true,
   },
+  // 4:2:2 shares chroma between pixel pairs, so a 3839-pixel line cannot carry it.
+  "color.subsampled-odd": { input: withCta(withDescriptor(clean, 0, dtd(3839, 2160, "50")), (c) => ({ ...c, ycbcr422: true })), fixable: true },
   "color.420-depth": { input: withBlocks(clean, (bs) => bs.map((b) => (b.kind === "hdmiForumVsdb" ? { ...b, dc30bit420: true } : b))), fixable: true },
   "link.too-fast": { input: tessera("Tessera-EJE-test.txt").edid, fixable: false },
   "link.depth-unusable": { input: tessera("Tessera-SX40.txt").edid, fixable: true },

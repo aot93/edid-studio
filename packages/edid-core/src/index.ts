@@ -64,8 +64,22 @@ export { edidLayout } from "./layout.ts";
 export type { LayoutNode, NodeRef } from "./layout.ts";
 export { byteDiff } from "./diff.ts";
 export type { ByteDiff } from "./diff.ts";
-export { buildTiming, calcCvt, dtdFieldProblems, exactDefaults, FORMULA_NAMES, fmtMHz, parseRefresh, rationalHz } from "./timing.ts";
-export type { Formula, Porches, Rational, Timing, TimingRequest, TimingResult } from "./timing.ts";
+export {
+  buildTiming,
+  calcCvt,
+  calcGtf,
+  DEFAULT_MIN_HDMI_HBLANK,
+  dtdFieldProblems,
+  exactDefaults,
+  FORMULA_NAMES,
+  fmtMHz,
+  MAX_ACTIVE,
+  parseRefresh,
+  rationalHz,
+} from "./timing.ts";
+export type { Encodings, Formula, Porches, Rational, Rb3Options, Timing, TimingRequest, TimingResult } from "./timing.ts";
+export { findDmt, findVic, lookupDmt, matchingStandards, standardRefreshHz } from "./standard-timings.ts";
+export type { DmtTiming, StandardTiming as StandardVideoTiming, VicTiming } from "./standard-timings.ts";
 export { DEPTHS, feasibility, FORMAT_NAMES, FORMATS, likelyChoice, linkReport, LINKS, tmdsRateKHz } from "./link.ts";
 export type { AdvertisedColour, ColourFormat, Depth, Feasibility, Link, ModeReport } from "./link.ts";
 export { advertisedColour, analyzeLink } from "./analyze.ts";

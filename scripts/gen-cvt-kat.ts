@@ -1,6 +1,6 @@
-// Generates CVT known-answer data from edid-decode --cvt (SPEC.md section 6:
-// "generate known-answer tests from the cvt and gtf utilities and
-// edid-decode"). Usage: node scripts/gen-cvt-kat.ts <path/to/edid-decode>
+// Generates CVT and GTF known-answer data from edid-decode --cvt and --gtf
+// (SPEC.md section 6: "generate known-answer tests from the cvt and gtf
+// utilities and edid-decode"). Usage: node scripts/gen-cvt-kat.ts <path/to/edid-decode>
 
 import { execFileSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
@@ -16,22 +16,40 @@ const modes: [number, number, number][] = [
   [1920, 1080, 120], [1600, 900, 60],
 ];
 
+function parse(kind: "CVT" | "GTF", out: string, what: string) {
+  const m = new RegExp(`${kind}:\\s+(\\d+)x(\\d+)\\s+([\\d.]+) Hz.*?([\\d.]+) MHz.*\\n\\s+Hfront\\s+(-?\\d+) Hsync\\s+(\\d+) Hback\\s+(-?\\d+) Hpol ([PN])\\n\\s+Vfront\\s+(\\d+) Vsync\\s+(\\d+) Vback\\s+(-?\\d+) Vpol ([PN])`).exec(out);
+  if (!m) throw new Error(`unparsed output for ${what}:\n${out}`);
+  return {
+    clockKHz: Math.round(Number(m[4]) * 1000),
+    hFrontPorch: Number(m[5]), hSync: Number(m[6]), hBackPorch: Number(m[7]), hSyncPositive: m[8] === "P",
+    vFrontPorch: Number(m[9]), vSync: Number(m[10]), vBackPorch: Number(m[11]), vSyncPositive: m[12] === "P",
+  };
+}
+
 const rows: unknown[] = [];
 for (const [w, h, fps] of modes) {
-  for (const rb of [0, 1, 2]) {
-    const out = execFileSync(bin, ["--cvt", `w=${w},h=${h},fps=${fps},rb=${rb}`], { encoding: "utf8" });
-    const m = /CVT:\s+(\d+)x(\d+)\s+([\d.]+) Hz.*?([\d.]+) MHz.*\n\s+Hfront\s+(\d+) Hsync\s+(\d+) Hback\s+(\d+) Hpol ([PN])\n\s+Vfront\s+(\d+) Vsync\s+(\d+) Vback\s+(\d+) Vpol ([PN])/.exec(out);
-    if (!m) throw new Error(`unparsed output for ${w}x${h}@${fps} rb=${rb}:\n${out}`);
-    rows.push({
-      w, h, fps, rb,
-      clockKHz: Math.round(Number(m[4]) * 1000),
-      hFrontPorch: Number(m[5]), hSync: Number(m[6]), hBackPorch: Number(m[7]), hSyncPositive: m[8] === "P",
-      vFrontPorch: Number(m[9]), vSync: Number(m[10]), vBackPorch: Number(m[11]), vSyncPositive: m[12] === "P",
-    });
+  for (const rb of [0, 1, 2, 3]) {
+    const arg = `w=${w},h=${h},fps=${fps},rb=${rb}`;
+    rows.push({ w, h, fps, rb, ...parse("CVT", execFileSync(bin, ["--cvt", arg], { encoding: "utf8" }), arg) });
   }
+  // CVT-RB v3 options: 160-pixel horizontal blank, a longer vertical blank, early vsync.
+  for (const opts of [{ hblank: 160 }, { hblank: 160, vblank: 600 }, { hblank: 120, earlyVsync: true }]) {
+    const arg = `w=${w},h=${h},fps=${fps},rb=3,hblank=${opts.hblank}${"vblank" in opts ? `,vblank=${opts.vblank}` : ""}${"earlyVsync" in opts ? ",early-vsync" : ""}`;
+    rows.push({ w, h, fps, rb: 3, rb3: opts, ...parse("CVT", execFileSync(bin, ["--cvt", arg], { encoding: "utf8" }), arg) });
+  }
+}
+
+const gtf: unknown[] = [];
+for (const [w, h, fps] of modes) {
+  const arg = `w=${w},h=${h},fps=${fps}`;
+  gtf.push({ w, h, fps, ...parse("GTF", execFileSync(bin, ["--gtf", arg], { encoding: "utf8" }), arg) });
 }
 writeFileSync(
   new URL("../packages/edid-core/test/data/cvt-kat.json", import.meta.url),
   JSON.stringify({ source: "edid-decode --cvt (v4l-utils c6600a7e)", rows }, null, 1) + "\n",
 );
-console.log(`wrote ${rows.length} rows`);
+writeFileSync(
+  new URL("../packages/edid-core/test/data/gtf-kat.json", import.meta.url),
+  JSON.stringify({ source: "edid-decode --gtf (v4l-utils c6600a7e)", rows: gtf }, null, 1) + "\n",
+);
+console.log(`wrote ${rows.length} CVT rows, ${gtf.length} GTF rows`);

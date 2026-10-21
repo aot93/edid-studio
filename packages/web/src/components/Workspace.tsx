@@ -7,6 +7,7 @@ import { current } from "../session.ts";
 import type { Session } from "../session.ts";
 import { HexView } from "./HexView.tsx";
 import { Inspector } from "./Inspector.tsx";
+import { LinkBudget } from "./LinkBudget.tsx";
 import type { EditFn, TimingTarget } from "./Inspector.tsx";
 import { StructureTree } from "./StructureTree.tsx";
 import { TimingPanel } from "./TimingPanel.tsx";
@@ -160,6 +161,8 @@ export function Workspace({ session, onEdit }: Props) {
           </section>
         </div>
       </div>
+
+      <LinkBudget edid={edid} link={link} />
     </>
   );
 }

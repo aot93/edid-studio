@@ -152,3 +152,24 @@ describe("acceptance test 2: explain the failure on the original", () => {
     expect(reports.map((r) => r.message)).toEqual([""]);
   });
 });
+
+describe("likely driver choice (SPEC.md section 7, a labelled heuristic)", () => {
+  it("the original lands on 8-bit RGB at 594 MHz: the fallback seen on the Tessera", async () => {
+    const { analyzeLink } = await import("../src/index.ts");
+    const reports = analyzeLink(fixture("Tessera-EJE-test.txt").edid, "hdmi2.0");
+    const dtd = reports.find((r) => r.mode === "Timing 3840x2160 @ 60.000 Hz");
+    expect(dtd?.likely).toMatchObject({ format: "rgb", depth: 8, rateKHz: 594_000 });
+  });
+
+  it("the working EDID lands on 10-bit RGB at 555 MHz", async () => {
+    const { analyzeLink } = await import("../src/index.ts");
+    const [only] = analyzeLink(fixture("Tessera-EJE-4K50-10bit-RGB.txt").edid, "hdmi2.0");
+    expect(only?.likely).toMatchObject({ format: "rgb", depth: 10, rateKHz: 555_000 });
+  });
+
+  it("lists every advertised format and depth per mode, so the UI can mark them", async () => {
+    const { analyzeLink } = await import("../src/index.ts");
+    const [only] = analyzeLink(fixture("Tessera-EJE-4K50-10bit-RGB.txt").edid, "hdmi2.0");
+    expect(only?.advertised.map((a) => `${a.format}-${a.depth}`)).toEqual(["rgb-8", "rgb-10"]);
+  });
+});
