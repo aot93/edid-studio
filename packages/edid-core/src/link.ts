@@ -18,14 +18,16 @@ export interface LinkInfo {
 }
 
 /**
- * DisplayPort payload, four lanes: 8b/10b for HBR2 and HBR3, 128b/132b for
- * UHBR (SPEC.md section 7). TODO(verify): FEC, spread-spectrum downspread
- * and MST overhead take a little more; this is the line-coding bound.
+ * DisplayPort data rate, four lanes: 8b/10b for HBR2 and HBR3; for UHBR
+ * 128b/132b, then 383/384 and 16384/16385 (the guide's calculator; see the
+ * note above FRL_RATES).
  */
 const dp = (name: string, gbpsPerLane: number, coding: number): LinkInfo => {
   const payloadKbps = 4 * gbpsPerLane * 1_000_000 * coding;
   return { name, kind: "dp", limitKHz: 0, limitLabel: `${(payloadKbps / 1_000_000).toFixed(2)} Gbps`, payloadKbps };
 };
+
+const UHBR_CODING = (128 / 132) * (383 / 384) * (16384 / 16385);
 
 export const LINKS: Record<Link, LinkInfo> = {
   dvi: { name: "DVI single link", kind: "tmds", limitKHz: 165_000, limitLabel: "165 MHz pixel clock" },
@@ -34,9 +36,9 @@ export const LINKS: Record<Link, LinkInfo> = {
   "hdmi2.1": { name: "HDMI 2.1", kind: "tmds", limitKHz: 600_000, limitLabel: "600 MHz TMDS or 48 Gbps FRL" },
   "dp1.2": dp("DisplayPort 1.2 (HBR2)", 5.4, 8 / 10),
   "dp1.4": dp("DisplayPort 1.4 (HBR3)", 8.1, 8 / 10),
-  "dp2.1-uhbr10": dp("DisplayPort 2.1 (UHBR10)", 10, 128 / 132),
-  "dp2.1-uhbr13.5": dp("DisplayPort 2.1 (UHBR13.5)", 13.5, 128 / 132),
-  "dp2.1-uhbr20": dp("DisplayPort 2.1 (UHBR20)", 20, 128 / 132),
+  "dp2.1-uhbr10": dp("DisplayPort 2.1 (UHBR10)", 10, UHBR_CODING),
+  "dp2.1-uhbr13.5": dp("DisplayPort 2.1 (UHBR13.5)", 13.5, UHBR_CODING),
+  "dp2.1-uhbr20": dp("DisplayPort 2.1 (UHBR20)", 20, UHBR_CODING),
 };
 
 /** Bits per pixel on DisplayPort: no container, so 4:2:2 is two components and 4:2:0 one and a half. */
@@ -53,19 +55,23 @@ export function dpBitsPerPixel(format: ColourFormat, depth: Depth): number {
 }
 
 /** One HDMI 2.1 Fixed Rate Link rate, as coded in the HDMI Forum VSDB (edid-decode max_frl_rates). */
+// Link capacity model: the HDMI 2.1 and DisplayPort 2.x specifications are
+// not available to us (paid, under NDA). FRL and UHBR overheads and the FRL
+// data-rate formula follow the calculator in Glenwing's "Guide to Display
+// Cables / Adapters v2" (linustechtips.com/topic/729232, as archived on
+// 2026-10-05), which the owner has found accurate. Known answers from its
+// tables are in test/link-kat.test.ts. TODO(verify) against hardware.
+
 export interface FrlRate {
   readonly code: number;
   readonly lanes: 3 | 4;
   readonly gbpsPerLane: number;
-  /** Payload after 16b/18b coding, in kbit/s. */
+  /** Data rate after all FRL overhead, in kbit/s. */
   readonly payloadKbps: number;
+  /** Data rate / raw rate: 16b/18b, RS FEC 251/255, 2040/2044 (2040/2043 on 3 lanes), 2007/2008. */
+  readonly overhead: number;
 }
 
-/**
- * FRL rates 1 to 6. Payload is lanes x rate x 16/18. TODO(verify): the HDMI
- * 2.1 FRL capacity computation also budgets RS FEC, map and audio overhead;
- * this is the 16b/18b bound only, so a stream close to it may not fit.
- */
 export const FRL_RATES: readonly FrlRate[] = (
   [
     [1, 3, 3],
@@ -75,17 +81,47 @@ export const FRL_RATES: readonly FrlRate[] = (
     [5, 4, 10],
     [6, 4, 12],
   ] as const
-).map(([code, lanes, gbpsPerLane]) => ({ code, lanes, gbpsPerLane, payloadKbps: (lanes * gbpsPerLane * 1_000_000 * 16) / 18 }));
+).map(([code, lanes, gbpsPerLane]) => {
+  const overhead = (16 / 18) * (251 / 255) * (lanes === 3 ? 2040 / 2043 : 2040 / 2044) * (2007 / 2008);
+  return { code, lanes, gbpsPerLane, overhead, payloadKbps: lanes * gbpsPerLane * 1_000_000 * overhead };
+});
 
-/** The lowest FRL rate that carries `kbps` of video, if any does. */
-export function frlRateFor(kbps: number): FrlRate | undefined {
-  return FRL_RATES.find((r) => r.payloadKbps >= kbps);
+/** The shape of a timing, which FRL needs beyond the pixel clock: its blanking is partly compressed. */
+export interface TimingGeometry {
+  readonly hActive: number;
+  readonly hTotal: number;
+  readonly vTotal: number;
+}
+
+/** A stream on an FRL link: the pixel clock, plus its geometry when known. */
+export interface FrlStream extends Partial<TimingGeometry> {
+  readonly pixelClockKHz: number;
 }
 
 /**
- * Bits per pixel on an FRL link. TODO(verify): 4:2:2 is taken as the same
- * 12-bit, two-component container it uses on TMDS.
+ * Data rate an uncompressed stream needs on an FRL rate, kbit/s. With the
+ * geometry: P x (24K - 18 x RC x overhead / H), where K is bits per pixel /
+ * 24 (1 for 4:2:2's 12-bit container), H the active width, and RC the
+ * blanking characters FRL drops after room for audio packets (APL per line
+ * from a 51 kHz packet rate). Without it: P x 24K, a little high.
  */
+export function frlNeedKbps(stream: FrlStream, rate: FrlRate, format: ColourFormat, depth: Depth): number {
+  const p = stream.pixelClockKHz; // kHz, so the result is kbit/s
+  const k = frlBitsPerPixel(format, depth) / 24;
+  if (stream.hActive === undefined || stream.hTotal === undefined || stream.vTotal === undefined) return p * 24 * k;
+  const hBlank = stream.hTotal - stream.hActive;
+  const lineRateHz = (p * 1000) / stream.hTotal;
+  const apl = Math.ceil(51_000 / lineRateHz);
+  const rc = Math.floor(Math.min(Math.max(0, (Math.max(0, hBlank * k - apl * 32 - 7) * 7) / 8 - 4), 400));
+  return p * (24 * k - (18 * rc * rate.overhead) / stream.hActive);
+}
+
+/** The lowest FRL rate that carries the stream, if any does. */
+export function frlRateFor(stream: FrlStream, format: ColourFormat = "rgb", depth: Depth = 8): FrlRate | undefined {
+  return FRL_RATES.find((r) => frlNeedKbps(stream, r, format, depth) <= r.payloadKbps);
+}
+
+/** Bits per pixel on an FRL link; 4:2:2 keeps its 12-bit, two-component container. */
 export function frlBitsPerPixel(format: ColourFormat, depth: Depth): number {
   switch (format) {
     case "rgb":
@@ -139,7 +175,7 @@ export interface Feasibility {
 }
 
 /** One row per format and depth: the rate the link must carry and whether it fits. */
-export function feasibility(pixelClockKHz: number, link: Link): Feasibility[] {
+export function feasibility(pixelClockKHz: number, link: Link, geometry?: TimingGeometry): Feasibility[] {
   const limit = LINKS[link].limitKHz;
   const payload = LINKS[link].payloadKbps;
   return FORMATS.flatMap((format) =>
@@ -162,8 +198,10 @@ export function feasibility(pixelClockKHz: number, link: Link): Feasibility[] {
       const rateKHz = link === "dvi" ? pixelClockKHz : tmdsRateKHz(pixelClockKHz, format, depth);
       if (link === "hdmi2.1" && rateKHz > limit) {
         // Above 600 MHz TMDS, HDMI 2.1 switches to FRL.
-        const kbps = pixelClockKHz * frlBitsPerPixel(format, depth);
-        const frl = frlRateFor(kbps);
+        const stream: FrlStream = { pixelClockKHz, ...geometry };
+        const frl = frlRateFor(stream, format, depth);
+        const top = FRL_RATES[FRL_RATES.length - 1];
+        const kbps = frl ? frlNeedKbps(stream, frl, format, depth) : top ? frlNeedKbps(stream, top, format, depth) : 0;
         return { format, depth, rateKHz, fits: frl !== undefined, kbps, ...(frl ? { frl } : {}) };
       }
       return { format, depth, rateKHz, fits: rateKHz <= limit };
@@ -188,6 +226,8 @@ export interface ModeReport {
   /** "Timing 3840x2160 @ 60.000 Hz" or "VIC 97 (3840x2160 @ 60.000 Hz)". */
   readonly mode: string;
   readonly pixelClockKHz: number;
+  /** The timing's shape, when known (detailed and DisplayID timings); FRL uses it. */
+  readonly geometry?: TimingGeometry;
   /** Advertised RGB depths the link cannot carry at this mode. */
   readonly tooFast: readonly Feasibility[];
   /** Advertised formats that carry the lowest failing RGB depth within the link. */
@@ -214,13 +254,13 @@ export interface AdvertisedColour {
  * caller supplies the modes and what the EDID advertises.
  */
 export function linkReport(
-  modes: readonly { readonly mode: string; readonly pixelClockKHz: number; readonly supports420: boolean }[],
+  modes: readonly { readonly mode: string; readonly pixelClockKHz: number; readonly supports420: boolean; readonly geometry?: TimingGeometry }[],
   advertised: AdvertisedColour,
   link: Link,
 ): ModeReport[] {
   const limit = LINKS[link];
-  return modes.map(({ mode, pixelClockKHz, supports420 }) => {
-    const rows = feasibility(pixelClockKHz, link);
+  return modes.map(({ mode, pixelClockKHz, supports420, geometry }) => {
+    const rows = feasibility(pixelClockKHz, link, geometry);
     // What the EDID offers at this mode: RGB and 4:4:4 at the deep colour depths, 4:2:2 at any depth
     // up to 12-bit (a 12-bit container; SPEC.md section 7), 4:2:0 only where the mode allows it.
     const offers = (f: ColourFormat, d: Depth) => {
@@ -257,6 +297,6 @@ export function linkReport(
           ? `${first.depth}-bit fits as ${alternatives.map((a) => `${FORMAT_NAMES[a.format]} (${via(a)})`).join(" or ")}.`
           : `No advertised format carries ${first.depth}-bit at this mode; expect the driver to fall back to 8-bit.`);
     }
-    return { mode, pixelClockKHz, tooFast, alternatives, message, advertised: offered, ...(likely ? { likely } : {}) };
+    return { mode, pixelClockKHz, ...(geometry ? { geometry } : {}), tooFast, alternatives, message, advertised: offered, ...(likely ? { likely } : {}) };
   });
 }

@@ -237,7 +237,7 @@ export function TimingEditor({ seed, link, onResult }: Props) {
                 ))}
               </ul>
             )}
-            <LinkTable pixelClockKHz={result.timing.pixelClock10kHz * 10} link={link} />
+            <LinkTable pixelClockKHz={result.timing.pixelClock10kHz * 10} link={link} geometry={result.timing} />
           </>
         )
       )}

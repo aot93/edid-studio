@@ -36,7 +36,7 @@ import {
   setRangeLimits,
   validateBytes,
 } from "@edid-studio/core";
-import type { Edid, ExportFormat, ImportedEdid, Issue, Link, TimingResult } from "@edid-studio/core";
+import type { Edid, ExportFormat, ImportedEdid, Issue, Link, TimingGeometry, TimingResult } from "@edid-studio/core";
 import { colours, depths, flag, formula, int, link, parse, positional, required, requiredInt, str } from "./args.ts";
 import type { Parsed } from "./args.ts";
 import { CliError, EXIT, hexStyleFor, readEdid, readLimited, shown, writeOutput } from "./io.ts";
@@ -196,17 +196,17 @@ export function timing(args: readonly string[]): number {
   ]);
   if (flag(p, "explain")) {
     say([...r.dtdProblems.map((x) => `DTD: ${x}`), ...(r.dtd ? [] : r.displayIdProblems.map((x) => `DisplayID: ${x}`)), ...r.notes.map((n) => `Note: ${n}`)]);
-    say(["", ...linkTable(t.pixelClock10kHz * 10, link(p))]);
+    say(["", ...linkTable(t.pixelClock10kHz * 10, link(p), t)]);
   }
   return code;
 }
 
-function linkTable(clockKHz: number, l: Link): string[] {
-  const rows = feasibility(clockKHz, l);
+function linkTable(clockKHz: number, l: Link, geometry?: TimingGeometry): string[] {
+  const rows = feasibility(clockKHz, l, geometry);
   const depthsShown = [8, 10, 12, 16] as const;
   const head = `${"".padEnd(13)}${depthsShown.map((d) => `${d}-bit`.padStart(12)).join("")}`;
   return [
-    `${LINKS[l].name}, limit ${LINKS[l].limitLabel} (rates include blanking${l === "hdmi2.1" ? "; FRL capacity approximate, 16b/18b only" : ""}):`,
+    `${LINKS[l].name}, limit ${LINKS[l].limitLabel} (rates include blanking${l === "hdmi2.1" ? "; FRL model from Glenwing's display guide, spec not available" : ""}):`,
     head,
     ...(["rgb", "ycbcr444", "ycbcr422", "ycbcr420"] as const).map((f) =>
       `${FORMAT_NAMES[f].padEnd(13)}${depthsShown
@@ -232,7 +232,7 @@ export function budget(args: readonly string[]): number {
   const l = link(p);
   const r = encoding(() => buildTiming({ hActive: w, vActive: h, refresh, formula: formula(p) }));
   const clock = r.timing.pixelClock10kHz * 10;
-  const rows = feasibility(clock, l);
+  const rows = feasibility(clock, l, r.timing);
   const row = rows.find((x) => x.format === format && x.depth === depth);
   if (!row) throw new CliError(EXIT.usage, "no such format and depth");
   const fits = row.fits && !row.unsupported;
@@ -248,7 +248,7 @@ export function budget(args: readonly string[]): number {
       : LINKS[l].kind === "dp"
         ? `${depth}-bit ${FORMAT_NAMES[format]} needs ${((row.kbps ?? 0) / 1_000_000).toFixed(2)} Gbps; ${LINKS[l].name} carries ${LINKS[l].limitLabel}: ${fits ? "fits" : "does not fit"}`
         : row.kbps !== undefined
-        ? `${depth}-bit ${FORMAT_NAMES[format]} needs ${(row.kbps / 1_000_000).toFixed(2)} Gbps (${mhz(row.rateKHz)} TMDS is above 600): ${row.frl ? `fits over FRL ${row.frl.gbpsPerLane} Gbps x ${row.frl.lanes} (approximate)` : "does not fit, even at 48 Gbps FRL"}`
+        ? `${depth}-bit ${FORMAT_NAMES[format]} needs ${(row.kbps / 1_000_000).toFixed(2)} Gbps (${mhz(row.rateKHz)} TMDS is above 600): ${row.frl ? `fits over FRL ${row.frl.gbpsPerLane} Gbps x ${row.frl.lanes}` : "does not fit, even at 48 Gbps FRL"}`
         : `${depth}-bit ${FORMAT_NAMES[format]} needs ${mhz(row.rateKHz)}; ${LINKS[l].name} carries ${LINKS[l].limitLabel}: ${fits ? "fits" : "does not fit"}`,
     `Fits ${LINKS[l].name} at this clock: ${fitting.join(", ") || "nothing"}`,
   ]);

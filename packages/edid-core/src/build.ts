@@ -7,7 +7,10 @@ import { encodeManufacturerId } from "./base-block.ts";
 import { EXT_HF_EEODB } from "./cta.ts";
 import { displayIdSection } from "./displayid.ts";
 import { EdidEncodeError } from "./errors.ts";
-import { dpBitsPerPixel, frlBitsPerPixel, frlRateFor, LINKS, tmdsRateKHz } from "./link.ts";
+import { describeDtd } from "./describe.ts";
+import { describeDisplayIdTiming } from "./displayid.ts";
+import { dpBitsPerPixel, FRL_RATES, frlNeedKbps, frlRateFor, LINKS, tmdsRateKHz } from "./link.ts";
+import type { FrlStream } from "./link.ts";
 import type { ColourFormat, Depth, Link } from "./link.ts";
 import type { CtaExtension, DataBlock, Descriptor, DetailedTimingDescriptor, DisplayIdTiming, Edid, Extension } from "./model.ts";
 import { autoRangeLimits, setColor, setMonitorName, setRangeLimits } from "./ops.ts";
@@ -207,10 +210,19 @@ export function buildEdid(intent: BuildIntent): Edid {
     let maxFrlRate = 0;
     if (worst > 600_000) {
       if (intent.link !== "hdmi2.1") throw new EdidEncodeError("link", `this mode needs ${(worst / 1000).toFixed(2)} MHz TMDS, above ${LINKS[intent.link].name}'s ${LINKS[intent.link].limitLabel}`);
-      const kbps = Math.max(...clocks.map((c) => Math.max(...intent.depths.map((d) => c * frlBitsPerPixel("rgb", d)))));
-      const frl = frlRateFor(kbps);
-      if (!frl) throw new EdidEncodeError("link", `this mode needs ${(kbps / 1_000_000).toFixed(2)} Gbps, above HDMI 2.1's 48 Gbps FRL`);
-      maxFrlRate = frl.code;
+      // Each timing at each depth, with its geometry (FRL compresses part of the blanking).
+      const streams: FrlStream[] = [...timings.map(describeDtd), ...displayIdTimings.map(describeDisplayIdTiming)].map((i) => ({ pixelClockKHz: i.pixelClockKHz, hActive: i.hActive, hTotal: i.hTotal, vTotal: i.vTotal }));
+      for (const s of streams) {
+        for (const d of intent.depths) {
+          const frl = frlRateFor(s, "rgb", d);
+          if (!frl) {
+            const top = FRL_RATES[FRL_RATES.length - 1];
+            const need = top ? frlNeedKbps(s, top, "rgb", d) : 0;
+            throw new EdidEncodeError("link", `a ${d}-bit mode needs ${(need / 1_000_000).toFixed(2)} Gbps, above HDMI 2.1's 41.89 Gbps of FRL data`);
+          }
+          maxFrlRate = Math.max(maxFrlRate, frl.code);
+        }
+      }
     }
     if (worst > 340_000) {
       if (intent.link === "hdmi1.4") throw new EdidEncodeError("link", `this mode needs ${(worst / 1000).toFixed(2)} MHz TMDS, above HDMI 1.4's 340 MHz`);
