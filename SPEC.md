@@ -268,7 +268,7 @@ The MVP is the core library, CLI and recipes; the UI follows once the engine is 
 | MVP | Parse and serialize base and CTA blocks with unknown-block preservation; hex, binary, C array and base64 import and export; tier 1 and 2 validation; timing engine with exact-refresh solver and DTD limits; VIC and DMT tables; link analyzer for HDMI 1.4, 2.0 and DisplayPort; operations and recipes; CLI; golden-recipe test; library as plain files with JSON sidecars |
 | v1 | Web UI (editor, wizard, timing lab, compare, export); audio, colorimetry and HDR editing; multi-output sets; hardware verification records; read EDIDs from Windows, Linux and macOS |
 | v1.1 | DisplayID Type I and VII timings and CTA video timing blocks; HDMI Forum SCDB (FRL, DSC) and HDMI 2.1 link rules; EDID 1.4 base features; video format preference block |
-| Later | Programming EDID emulators over DDC; device profile plugins (for example Tessera) |
+| Later | Device profile plugins (for example Tessera). No programming of EDID emulators over DDC (owner decision, 2026-10-21) |
 
 ## UI specification
 
