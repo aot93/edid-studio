@@ -1,9 +1,11 @@
 import { DEPTHS, feasibility, FORMAT_NAMES, FORMATS, LINKS } from "@edid-studio/core";
-import type { Feasibility, Link } from "@edid-studio/core";
+import type { Feasibility, Link, TimingGeometry } from "@edid-studio/core";
 
 interface Props {
   readonly pixelClockKHz: number;
   readonly link: Link;
+  /** The timing's shape, which FRL uses; without it FRL needs are slightly overstated. */
+  readonly geometry?: TimingGeometry | undefined;
   /** Cells the EDID advertises, outlined. */
   readonly advertised?: readonly Feasibility[];
   /** The likely driver choice, marked. */
@@ -11,13 +13,13 @@ interface Props {
 }
 
 /** Format x depth grid: the TMDS rate each needs and whether it fits the link (SPEC.md section 7). */
-export function LinkTable({ pixelClockKHz, link, advertised, likely }: Props) {
-  const rows = feasibility(pixelClockKHz, link);
+export function LinkTable({ pixelClockKHz, link, geometry, advertised, likely }: Props) {
+  const rows = feasibility(pixelClockKHz, link, geometry);
   return (
     <table className="linktable">
       <caption>
         {LINKS[link].name}: limit {LINKS[link].limitLabel}. Rates include blanking.
-        {link === "hdmi2.1" && " Above 600 MHz TMDS a cell shows the FRL rate it needs; FRL capacity is an approximation (16b/18b only)."}
+        {link === "hdmi2.1" && " Above 600 MHz TMDS a cell shows the FRL rate it needs (model from Glenwing's display guide; the HDMI 2.1 spec is not public)."}
       </caption>
       <thead>
         <tr>

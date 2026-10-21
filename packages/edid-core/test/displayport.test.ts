@@ -18,13 +18,13 @@ const dtd = (w: number, h: number, hz: string) => {
 const intent: BuildIntent = { name: "DP wall", manufacturerId: "VYV", productCode: 1, year: 2026, timing: dtd(3840, 2160, "60"), link: "dp1.4", formats: ["rgb"], depths: [10] };
 
 describe("DisplayPort links", () => {
-  it("payloads: 8b/10b for HBR2 and HBR3, 128b/132b for UHBR, four lanes", () => {
+  it("payloads: 8b/10b for HBR2 and HBR3, 128b/132b and two small framing factors for UHBR, four lanes", () => {
     const gbps = (l: keyof typeof LINKS) => (LINKS[l].payloadKbps ?? 0) / 1_000_000;
     expect(gbps("dp1.2")).toBeCloseTo(17.28, 2);
     expect(gbps("dp1.4")).toBeCloseTo(25.92, 2);
-    expect(gbps("dp2.1-uhbr10")).toBeCloseTo(38.79, 2);
-    expect(gbps("dp2.1-uhbr13.5")).toBeCloseTo(52.36, 2);
-    expect(gbps("dp2.1-uhbr20")).toBeCloseTo(77.58, 2);
+    expect(gbps("dp2.1-uhbr10")).toBeCloseTo(38.68, 2);
+    expect(gbps("dp2.1-uhbr13.5")).toBeCloseTo(52.22, 2);
+    expect(gbps("dp2.1-uhbr20")).toBeCloseTo(77.37, 2);
   });
 
   it("needs pixel clock x bits per pixel: 3 x depth, 2 x depth for 4:2:2, 1.5 x depth for 4:2:0", () => {

@@ -5,7 +5,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { buildEdid, buildTiming, feasibility, FRL_RATES, frlRateFor, lookupVic, parseEdid, serializeEdid, validateEdid } from "../src/index.ts";
+import { buildEdid, buildTiming, describeDisplayIdTiming, feasibility, FRL_RATES, frlRateFor, lookupVic, parseEdid, serializeEdid, validateEdid } from "../src/index.ts";
 import type { CtaExtension, Edid, HdmiForumVsdb } from "../src/index.ts";
 import { CORPUS_DIR } from "./corpus.ts";
 
@@ -79,12 +79,12 @@ describe("FRL link budget (HDMI 2.1)", () => {
     ]);
   });
 
-  it("picks the lowest FRL rate whose payload (16b/18b) carries the stream", () => {
-    // 4K60 10-bit RGB: 594 MHz x 30 bits = 17.82 Gbps; 6x3 carries 16, 6x4 carries 21.33.
-    expect(frlRateFor(594_000 * 30)?.code).toBe(3);
-    // 4K120 10-bit RGB: 1188 MHz x 30 = 35.64 Gbps; 10x4 carries 35.56, 12x4 42.67.
-    expect(frlRateFor(1_188_000 * 30)?.code).toBe(6);
-    expect(frlRateFor(1_188_000 * 48)).toBeUndefined();
+  it("picks the lowest FRL rate whose data rate carries the stream", () => {
+    // 4K60 10-bit RGB: 594 MHz x 30 bits = 17.82 Gbps; 6x3 carries 15.72, 6x4 20.95.
+    expect(frlRateFor({ pixelClockKHz: 594_000 }, "rgb", 10)?.code).toBe(3);
+    // 4K120 10-bit RGB: 1188 MHz x 30 = 35.64 Gbps; 10x4 carries 34.91, 12x4 41.89.
+    expect(frlRateFor({ pixelClockKHz: 1_188_000 }, "rgb", 10)?.code).toBe(6);
+    expect(frlRateFor({ pixelClockKHz: 1_188_000 }, "rgb", 16)).toBeUndefined();
   });
 
   it("HDMI 2.1: TMDS up to 600 MHz, FRL above, per format and depth", () => {
@@ -116,7 +116,8 @@ describe("building HDMI 2.1 EDIDs", () => {
     const t = wide(3840, 2160, "120");
     const e = buildEdid({ ...intent, timing: timing(1920, 1080, "120"), displayIdTimings: [t] });
     const f = forum(e);
-    expect(f).toMatchObject({ maxTmdsCharRate5MHz: 120, scdcPresent: true, maxFrlRate: frlRateFor(t.pixelClock10kHz * 10 * 30)?.code });
+    const i = describeDisplayIdTiming(t);
+    expect(f).toMatchObject({ maxTmdsCharRate5MHz: 120, scdcPresent: true, maxFrlRate: frlRateFor({ pixelClockKHz: i.pixelClockKHz, hActive: i.hActive, hTotal: i.hTotal, vTotal: i.vTotal }, "rgb", 10)?.code });
     expect(f.maxFrlRate).toBeGreaterThanOrEqual(2);
     expect(validateEdid(e).filter((i) => i.severity === "error")).toEqual([]);
     expect(parseEdid(serializeEdid(e))).toEqual(e);

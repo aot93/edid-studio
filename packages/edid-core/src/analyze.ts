@@ -4,7 +4,7 @@
 import { describeDtd, lookupVic, modeLabel } from "./describe.ts";
 import { describeDisplayIdTiming, displayIdTimings } from "./displayid.ts";
 import { linkReport } from "./link.ts";
-import type { AdvertisedColour, ColourFormat, Depth, Link, ModeReport } from "./link.ts";
+import type { AdvertisedColour, ColourFormat, Depth, Link, ModeReport, TimingGeometry } from "./link.ts";
 import type { Edid } from "./model.ts";
 
 export function advertisedColour(edid: Edid): AdvertisedColour {
@@ -57,16 +57,16 @@ export function defaultLink(edid: Edid): Link {
 
 /** Link report for every detailed timing (DTD or DisplayID Type I) and listed VIC. */
 export function analyzeLink(edid: Edid, link: Link): ModeReport[] {
-  const modes: { mode: string; pixelClockKHz: number; supports420: boolean }[] = [];
+  const modes: { mode: string; pixelClockKHz: number; supports420: boolean; geometry?: TimingGeometry }[] = [];
   const dtds = [...edid.base.descriptors, ...edid.extensions.flatMap((e) => (e.kind === "cta" ? e.descriptors : []))];
   for (const d of dtds) {
     if (d.kind !== "dtd") continue;
     const info = describeDtd(d);
-    modes.push({ mode: `Timing ${modeLabel(info)}`, pixelClockKHz: info.pixelClockKHz, supports420: false });
+    modes.push({ mode: `Timing ${modeLabel(info)}`, pixelClockKHz: info.pixelClockKHz, supports420: false, geometry: info });
   }
   for (const t of displayIdTimings(edid)) {
     const info = describeDisplayIdTiming(t);
-    modes.push({ mode: `DisplayID timing ${modeLabel(info)}`, pixelClockKHz: info.pixelClockKHz, supports420: false });
+    modes.push({ mode: `DisplayID timing ${modeLabel(info)}`, pixelClockKHz: info.pixelClockKHz, supports420: false, geometry: info });
   }
 
   // 4:2:0 support per SVD: capability map bits index SVDs across all video blocks.

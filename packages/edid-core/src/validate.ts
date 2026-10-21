@@ -16,7 +16,7 @@ import { describeDisplayIdTiming, displayIdTimings } from "./displayid.ts";
 import { EXT_HF_EEODB } from "./cta.ts";
 import { DISPLAYID_EXTENSION_TAG, MAX_SECTION_LENGTH } from "./displayid.ts";
 import { declaredExtensionCount, expectedEdidLength, parseEdid } from "./edid.ts";
-import { feasibility, FRL_RATES, LINKS, tmdsRateKHz } from "./link.ts";
+import { feasibility, FRL_RATES, frlNeedKbps, LINKS, tmdsRateKHz } from "./link.ts";
 import type { Depth, Link } from "./link.ts";
 import type { NodeRef } from "./layout.ts";
 import type { CtaExtension, DataBlock, Descriptor, Edid, HdmiForumVsdb, HdmiVsdb } from "./model.ts";
@@ -711,7 +711,8 @@ function hdmiRules(edid: Edid): Issue[] {
   const stated = forum && forum.rateKHz > 0 ? forum.rateKHz : vsdbKHz;
   // Above the TMDS maximum, an HDMI 2.1 sink can still take the mode over FRL (8-bit RGB, 24 bits a pixel).
   const frl = forum && forum.b.maxFrlRate > 0 ? FRL_RATES.find((r) => r.code === forum?.b.maxFrlRate) : undefined;
-  const overFrl = frl !== undefined && needed * 24 <= frl.payloadKbps;
+  // Without per-mode geometry this is P x 24, slightly above what FRL really needs (frlNeedKbps).
+  const overFrl = frl !== undefined && frlNeedKbps({ pixelClockKHz: needed }, frl, "rgb", 8) <= frl.payloadKbps;
   if (stated > 0 && needed > stated && !overFrl) {
     out.push(
       issue("hdmi.max-tmds", `The fastest mode needs ${(needed / 1000).toFixed(2)} MHz at 8-bit, above the stated maximum of ${stated / 1000} MHz${frl ? ` and FRL ${frl.gbpsPerLane} Gbps x ${frl.lanes}` : ""}.`, { where }),
@@ -758,7 +759,7 @@ function linkRules(edid: Edid, link: Link): Issue[] {
   const modes = reports.filter((r) => !r.mode.includes("4:2:0 only"));
   if (modes.length > 0 && edid.extensions.some((e) => e.kind === "cta")) {
     for (const depth of adv.depths.filter((d) => d > 8)) {
-      const usable = modes.some((m) => feasibility(m.pixelClockKHz, link).some((f) => f.format === "rgb" && f.depth === depth && f.fits));
+      const usable = modes.some((m) => feasibility(m.pixelClockKHz, link, m.geometry).some((f) => f.format === "rgb" && f.depth === depth && f.fits));
       if (!usable) {
         const flag = depth === 10 ? "dc30bit" : depth === 12 ? "dc36bit" : "dc48bit";
         out.push(

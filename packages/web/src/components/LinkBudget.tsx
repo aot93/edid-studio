@@ -37,7 +37,7 @@ export function LinkBudget({ edid, link }: { readonly edid: Edid; readonly link:
                     <span className="pill bad">nothing advertised fits</span>
                   )}
                 </summary>
-                <LinkTable pixelClockKHz={r.pixelClockKHz} link={link} advertised={r.advertised} likely={r.likely} />
+                <LinkTable pixelClockKHz={r.pixelClockKHz} link={link} geometry={r.geometry} advertised={r.advertised} likely={r.likely} />
               </details>
             </li>
           ))}

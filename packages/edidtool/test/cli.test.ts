@@ -134,7 +134,9 @@ describe("DisplayPort and HDMI 2.1", () => {
     expect(dp.out).toMatch(/10-bit RGB needs 39\.\d\d Gbps; DisplayPort 1\.4 \(HBR3\) carries 25\.92 Gbps: does not fit/);
     const frl = run(["budget", "--timing", "3840x2160@120", "--formula", "vic", "--color", "rgb", "--depth", "10", "--link", "hdmi2.1"]);
     expect(frl.code).toBe(0);
-    expect(frl.out).toContain("fits over FRL 12 Gbps x 4 (approximate)");
+    // VIC 117 has 560 pixels of horizontal blanking, which FRL partly compresses: 33.70 Gbps, so FRL 10 Gbps x 4 (the familiar "40 Gbps for 4K120 10-bit").
+    expect(frl.out).toContain("needs 33.70 Gbps");
+    expect(frl.out).toContain("fits over FRL 10 Gbps x 4");
   });
 
   it("builds a DisplayPort EDID that validates against its own link by default", () => {
