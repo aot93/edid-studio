@@ -71,5 +71,5 @@ those headers in the host's configuration.
 | M2 Timing and link | Timing engine, DTD limits, exact-refresh solver, VIC and DMT tables, link analyzer |
 | M3 CLI and recipes | All CLI commands, operations, recipe runner |
 | M4 Web UI | Library, editor, wizard, timing lab, compare, export |
-| M5 Platform I/O | Read-only adapters (the app never writes to a machine) |
+| ~~M5 Platform I/O~~ | Dropped: no connected-display read, no writes to a machine |
 | M6 v1.1 formats | DisplayID, HDMI Forum SCDB, HDMI 2.1 rules |
