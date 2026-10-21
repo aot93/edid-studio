@@ -360,11 +360,13 @@ export function setColor(edid: Edid, formats: readonly ColourFormat[], requested
     }),
   }));
 
-  // EDID 1.4 digital input: bits 6-4 hold the bit depth (E-EDID 1.4 table 3.11).
+  // EDID 1.4 digital input: byte 20 bits 6-4 hold the bit depth (E-EDID 1.4 table 3.11), byte 24
+  // bits 4-3 the YCbCr formats (table 3.14). DisplayPort sinks state colour only here.
   const vi = out.base.videoInput;
   if (out.base.version === 1 && out.base.revision >= 4 && vi & 0x80) {
     const max = Math.max(...depths);
-    out = { ...out, base: { ...out.base, videoInput: (vi & 0x8f) | ((DEPTH_CODES[max] ?? 0) << 4) } };
+    const encoding = (y444 ? 0x08 : 0) | (formats.includes("ycbcr422") ? 0x10 : 0);
+    out = { ...out, base: { ...out.base, videoInput: (vi & 0x8f) | ((DEPTH_CODES[max] ?? 0) << 4), features: (out.base.features & ~0x18) | encoding } };
   }
   return out;
 }

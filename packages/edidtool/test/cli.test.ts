@@ -127,6 +127,25 @@ describe("budget", () => {
   });
 });
 
+describe("DisplayPort and HDMI 2.1", () => {
+  it("budget speaks Gbps on DisplayPort and FRL on HDMI 2.1", () => {
+    const dp = run(["budget", "--timing", "3840x2160@144", "--formula", "cvt-rb2", "--color", "rgb", "--depth", "10", "--link", "dp1.4"]);
+    expect(dp.code).toBe(2);
+    expect(dp.out).toMatch(/10-bit RGB needs 39\.\d\d Gbps; DisplayPort 1\.4 \(HBR3\) carries 25\.92 Gbps: does not fit/);
+    const frl = run(["budget", "--timing", "3840x2160@120", "--formula", "vic", "--color", "rgb", "--depth", "10", "--link", "hdmi2.1"]);
+    expect(frl.code).toBe(0);
+    expect(frl.out).toContain("fits over FRL 12 Gbps x 4 (approximate)");
+  });
+
+  it("builds a DisplayPort EDID that validates against its own link by default", () => {
+    const out = tmp("dp.txt");
+    expect(run(["build", "--width", "3840", "--height", "2160", "--refresh", "60", "--formula", "cvt-rb2", "--depth", "10", "--link", "dp1.4", "-o", out]).code).toBe(0);
+    const v = run(["validate", out]);
+    expect(v.code).toBe(0);
+    expect(v.out).toContain("(DisplayPort 1.4 (HBR3))");
+  });
+});
+
 describe("build", () => {
   it("builds a 5760x1080 LED wall EDID from scratch, and never overwrites without --force", () => {
     const out = tmp("wall.txt");

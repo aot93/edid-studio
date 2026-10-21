@@ -6,7 +6,7 @@
 // a hardware-verified case shows a source accepts the EDID anyway; those
 // rules are warnings and say so (see the Tessera notes in SPEC.md section 14).
 
-import { analyzeLink, advertisedColour } from "./analyze.ts";
+import { analyzeLink, advertisedColour, defaultLink } from "./analyze.ts";
 import { EDID_HEADER } from "./base-block.ts";
 import { decodeStandardTiming, ESTABLISHED_TIMINGS, isEstablishedSet, UNUSED_STANDARD_TIMING } from "./base-timings.ts";
 import { encodeChromaticity, SRGB } from "./build.ts";
@@ -17,7 +17,7 @@ import { EXT_HF_EEODB } from "./cta.ts";
 import { DISPLAYID_EXTENSION_TAG, MAX_SECTION_LENGTH } from "./displayid.ts";
 import { declaredExtensionCount, expectedEdidLength, parseEdid } from "./edid.ts";
 import { feasibility, FRL_RATES, LINKS, tmdsRateKHz } from "./link.ts";
-import type { Link } from "./link.ts";
+import type { Depth, Link } from "./link.ts";
 import type { NodeRef } from "./layout.ts";
 import type { CtaExtension, DataBlock, Descriptor, Edid, HdmiForumVsdb, HdmiVsdb } from "./model.ts";
 import { autoRangeLimits, makePreferred, removeHdmiVideo, removeSvd, setCtaYcbcr, setHdmiDeepColour, setHf420DeepColour, setRangeLimits, setStandardTimings } from "./ops.ts";
@@ -263,7 +263,7 @@ function listModes(edid: Edid): Mode[] {
 
 /** Tiers 1 (model level), 2 and 3 on a model. */
 export function validateEdid(edid: Edid, options: ValidationOptions = {}): Issue[] {
-  const link = options.link ?? "hdmi2.0";
+  const link = options.link ?? defaultLink(edid);
   return [...blockMapRules(edid), ...descriptorRules(edid), ...baseRules(edid), ...rangeRules(edid), ...ctaRules(edid), ...hdmiRules(edid), ...linkRules(edid, link)];
 }
 
@@ -762,7 +762,7 @@ function linkRules(edid: Edid, link: Link): Issue[] {
       if (!usable) {
         const flag = depth === 10 ? "dc30bit" : depth === 12 ? "dc36bit" : "dc48bit";
         out.push(
-          issue("link.depth-unusable", `${depth}-bit is advertised, but no listed mode can carry ${depth}-bit RGB on ${LINKS[link].name} (the slowest needs ${(tmdsRateKHz(Math.min(...modes.map((m) => m.pixelClockKHz)), "rgb", depth) / 1000).toFixed(2)} MHz).`, {
+          issue("link.depth-unusable", `${depth}-bit is advertised, but no listed mode can carry ${depth}-bit RGB on ${LINKS[link].name} (the slowest needs ${slowestNeeds(Math.min(...modes.map((m) => m.pixelClockKHz)), link, depth)}).`, {
             fix: { label: `Stop advertising ${depth}-bit`, apply: (e) => setHdmiDeepColour(e, { [flag]: false }) },
           }),
         );
@@ -770,6 +770,13 @@ function linkRules(edid: Edid, link: Link): Issue[] {
     }
   }
   return out;
+}
+
+/** What the slowest mode needs at this depth, in the link's own unit. */
+function slowestNeeds(clockKHz: number, link: Link, depth: Depth): string {
+  const row = feasibility(clockKHz, link).find((r) => r.format === "rgb" && r.depth === depth);
+  if (row?.kbps !== undefined) return `${(row.kbps / 1_000_000).toFixed(2)} Gbps`;
+  return `${(tmdsRateKHz(clockKHz, "rgb", depth) / 1000).toFixed(2)} MHz`;
 }
 
 function mapVsdb(edid: Edid, f: (b: HdmiVsdb) => HdmiVsdb): Edid {

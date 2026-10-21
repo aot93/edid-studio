@@ -7,7 +7,7 @@ import { encodeManufacturerId } from "./base-block.ts";
 import { EXT_HF_EEODB } from "./cta.ts";
 import { displayIdSection } from "./displayid.ts";
 import { EdidEncodeError } from "./errors.ts";
-import { frlBitsPerPixel, frlRateFor, LINKS, tmdsRateKHz } from "./link.ts";
+import { dpBitsPerPixel, frlBitsPerPixel, frlRateFor, LINKS, tmdsRateKHz } from "./link.ts";
 import type { ColourFormat, Depth, Link } from "./link.ts";
 import type { CtaExtension, DataBlock, Descriptor, DetailedTimingDescriptor, DisplayIdTiming, Edid, Extension } from "./model.ts";
 import { autoRangeLimits, setColor, setMonitorName, setRangeLimits } from "./ops.ts";
@@ -36,6 +36,50 @@ export function encodeChromaticity(c: Chromaticity): number[] {
     (lo(4) << 6) | (lo(5) << 4) | (lo(6) << 2) | lo(7),
     ...v.map((x) => x >> 2),
   ];
+}
+
+/**
+ * A DisplayPort sink: EDID 1.4, which DisplayPort sinks use, with the bit
+ * depth and the DisplayPort interface in byte 20 and the YCbCr formats in
+ * byte 24 (E-EDID 1.4 tables 3.11 and 3.14); no CTA extension, so up to two
+ * DTDs; range limits "range limits only", allowed from EDID 1.4. Timings a
+ * DTD cannot hold go in a DisplayID block; EDID 1.4 needs no EEODB for it.
+ */
+function buildDisplayPortEdid(intent: BuildIntent, timings: readonly DetailedTimingDescriptor[], displayIdTimings: readonly DisplayIdTiming[], displayId: Extension[]): Edid {
+  const link = LINKS[intent.link];
+  const payload = link.payloadKbps ?? 0;
+  const clocks = [...timings, ...displayIdTimings].map((t) => t.pixelClock10kHz * 10);
+  const kbps = Math.max(...clocks.flatMap((c) => intent.formats.flatMap((f) => intent.depths.map((d) => c * dpBitsPerPixel(f, d)))));
+  if (kbps > payload) throw new EdidEncodeError("link", `this mode needs ${(kbps / 1_000_000).toFixed(2)} Gbps, above ${link.name}'s ${link.limitLabel}`);
+  if (timings.length > 2) throw new EdidEncodeError("timings", "DisplayPort EDIDs here hold at most two DTDs (no CTA extension)");
+  const [, second] = timings;
+
+  let edid: Edid = {
+    base: {
+      manufacturerCode: encodeManufacturerId(intent.manufacturerId),
+      productCode: intent.productCode,
+      serialNumber: intent.serialNumber ?? 0,
+      week: 0,
+      yearOffset: intent.year - 1990,
+      version: 1,
+      revision: 4,
+      // Digital, DisplayPort interface (5); setColor fills in the depth.
+      videoInput: 0x80 | 0x05,
+      screenSize: [0, 0],
+      gamma: 120,
+      // Byte 24 (EDID 1.4): sRGB default colour space bit 2, preferred timing is native bit 1; setColor sets the YCbCr bits.
+      features: 0x04 | 0x02,
+      chromaticity: encodeChromaticity(SRGB),
+      establishedTimings: [intent.include640x480 ? 0x20 : 0, 0, 0],
+      standardTimings: new Array(8).fill([0x01, 0x01]),
+      descriptors: [intent.timing, { kind: "dummy" }, { kind: "dummy" }, second ?? { kind: "dummy" }],
+    },
+    extensions: displayId,
+  };
+  edid = setColor(edid, intent.formats, intent.depths);
+  const limits = autoRangeLimits(edid, "none");
+  if (limits) edid = setRangeLimits(edid, limits);
+  return setMonitorName(edid, intent.name);
 }
 
 /** Base-block timing for sources that ignore DisplayID: 1920x1080 at the requested refresh, exact where it can be. */
@@ -110,8 +154,9 @@ export function buildEdid(intent: BuildIntent): Edid {
     const odd = [...timings, ...displayIdTimings].find((t) => t.hActive % 2 === 1);
     if (odd) throw new EdidEncodeError("colour formats", `YCbCr 4:2:2 needs an even width; ${odd.hActive} is odd`);
   }
-  const hdmi = intent.link !== "dvi";
   const displayId: Extension[] = displayIdTimings.length > 0 ? [displayIdSection(displayIdTimings)] : [];
+  if (LINKS[intent.link].kind === "dp") return buildDisplayPortEdid(intent, timings, displayIdTimings, displayId);
+  const hdmi = intent.link !== "dvi";
 
   // Byte 24 (EDID 1.3): display type RGB colour in bits 4-3 (01), sRGB
   // default colour space bit 2, preferred timing bit 1.

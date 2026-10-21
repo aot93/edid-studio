@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { byteDiff, describeDisplayIdTiming, describeDtd, edidLayout, LINKS, modeLabel, preferredDisplayIdTiming, printable, serializeEdid } from "@edid-studio/core";
+import { byteDiff, defaultLink, describeDisplayIdTiming, describeDtd, edidLayout, LINKS, modeLabel, preferredDisplayIdTiming, printable, serializeEdid } from "@edid-studio/core";
 import type { LayoutNode, Link } from "@edid-studio/core";
 import { collectIssues, worstByNode } from "../issues.ts";
 import { monitorName, nodeAtOffset, nodeLabel, preferredTiming } from "../model-view.ts";
@@ -35,7 +35,8 @@ export function Workspace({ session, onEdit }: Props) {
   const [selectedId, setSelectedId] = useState<string>(() => preferredNodeId(layout, edid));
   const [hovered, setHovered] = useState<LayoutNode | null>(null);
   const selected = nodes.find((n) => n.id === selectedId) ?? nodes[0];
-  const [link, setLink] = useState<Link>("hdmi2.0");
+  // Start from the link the EDID is for: DisplayPort for a DisplayPort sink, HDMI 2.1 when it declares FRL.
+  const [link, setLink] = useState<Link>(() => defaultLink(current(session)));
   const [timingTarget, setTimingTarget] = useState<TimingTarget | null>(null);
   const issues = useMemo(() => collectIssues(edid, bytes, layout, session.source.checksumErrors, link), [edid, bytes, layout, session.source.checksumErrors, link]);
   const badges = useMemo(() => worstByNode(issues), [issues]);

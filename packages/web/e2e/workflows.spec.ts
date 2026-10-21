@@ -155,3 +155,19 @@ test("builds a 4K120 HDMI 2.1 EDID that declares FRL", async ({ page }) => {
   const forum = cta?.kind === "cta" ? cta.dataBlocks.find((b) => b.kind === "hdmiForumVsdb") : undefined;
   expect(forum?.kind === "hdmiForumVsdb" && forum.maxFrlRate).toBeGreaterThanOrEqual(2);
 });
+
+test("builds a DisplayPort 1.4 EDID: EDID 1.4, depth and interface in the base block", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Create a new EDID" }).click();
+  await page.getByRole("combobox", { name: "Link" }).selectOption("dp1.4");
+  await page.getByLabel("Formula").selectOption("cvt-rb2");
+  await fill(page, { Width: "3840", Height: "2160", "Refresh (Hz)": "60" });
+  await expect(page.locator(".linktable")).toContainText("DisplayPort 1.4");
+  await page.getByRole("button", { name: "Create EDID" }).click();
+  await expect(page.locator(".issues li.error")).toHaveCount(0);
+  await expect(page.locator(".linkbudget")).toContainText("DisplayPort 1.4");
+  const { edid } = importEdid(await download(page));
+  expect([edid.base.version, edid.base.revision]).toEqual([1, 4]);
+  expect(edid.base.videoInput & 0x0f).toBe(0x05);
+  expect(edid.extensions).toEqual([]);
+});

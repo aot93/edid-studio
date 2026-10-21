@@ -15,7 +15,8 @@ EDIDs whose timings and colour flags agree with the link from the start.
 > export EDIDs, with a timing engine (exact refresh, CVT, CVT-RB v1 to v3,
 > GTF, VIC and DMT lookups, manual porches), an HDMI link budget and a rule
 > engine ([`docs/rules.md`](docs/rules.md)) cross-checked against
-> `edid-decode` in CI. The `edidtool` CLI decodes, validates, computes
+> `edid-decode` in CI. Links: DVI, HDMI 1.4 to 2.1 (FRL) and DisplayPort 1.2
+> to 2.1 (UHBR20); HDMI and DisplayPort EDIDs are built to match. The `edidtool` CLI decodes, validates, computes
 > timings and link budgets, builds, runs recipes, diffs and converts. All
 > nine acceptance tests pass.
 
