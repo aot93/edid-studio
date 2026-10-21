@@ -12,6 +12,7 @@ import {
   buildEdid,
   buildTiming,
   checkExpect,
+  defaultLink,
   describeChanges,
   describeEdid,
   EdidEncodeError,
@@ -85,7 +86,9 @@ export function validate(args: readonly string[]): number {
   const p = parse(args, { link: { type: "string" }, strict: { type: "boolean" }, "second-opinion": { type: "boolean" }, json: { type: "boolean" } });
   const file = positional(p, 0, "the EDID file to validate");
   const input = readEdid(file);
-  const report = validateBytes(input.bytes, { link: link(p) });
+  // Without --link, the EDID's own link: DisplayPort for a DisplayPort sink, HDMI 2.1 when it declares FRL.
+  const l = str(p, "link") !== undefined ? link(p) : defaultLink(input.edid);
+  const report = validateBytes(input.bytes, { link: l });
   let code = exitFor(report.issues, flag(p, "strict"));
   const second = flag(p, "second-opinion") ? secondOpinion(input.bytes) : undefined;
   if (second && !second.pass && code === EXIT.clean) code = flag(p, "strict") ? EXIT.errors : EXIT.warnings;
@@ -94,7 +97,7 @@ export function validate(args: readonly string[]): number {
     return code;
   }
   say(issueLines(report.issues));
-  say(`${report.errors} error${report.errors === 1 ? "" : "s"}, ${report.warnings} warning${report.warnings === 1 ? "" : "s"} (${LINKS[link(p)].name})`);
+  say(`${report.errors} error${report.errors === 1 ? "" : "s"}, ${report.warnings} warning${report.warnings === 1 ? "" : "s"} (${LINKS[l].name})`);
   if (second) say(["", "edid-decode --check (second opinion):", ...(second.failures.length > 0 ? second.failures.map((f) => `  ${f}`) : ["  no failures"])]);
   return code;
 }
@@ -242,7 +245,9 @@ export function budget(args: readonly string[]): number {
     `${w}x${h} @ ${refresh} Hz (${FORMULA_NAMES[r.request.formula]}): pixel clock ${mhz(clock)}`,
     row.unsupported
       ? `${depth}-bit ${FORMAT_NAMES[format]}: ${row.unsupported}`
-      : row.kbps !== undefined
+      : LINKS[l].kind === "dp"
+        ? `${depth}-bit ${FORMAT_NAMES[format]} needs ${((row.kbps ?? 0) / 1_000_000).toFixed(2)} Gbps; ${LINKS[l].name} carries ${LINKS[l].limitLabel}: ${fits ? "fits" : "does not fit"}`
+        : row.kbps !== undefined
         ? `${depth}-bit ${FORMAT_NAMES[format]} needs ${(row.kbps / 1_000_000).toFixed(2)} Gbps (${mhz(row.rateKHz)} TMDS is above 600): ${row.frl ? `fits over FRL ${row.frl.gbpsPerLane} Gbps x ${row.frl.lanes} (approximate)` : "does not fit, even at 48 Gbps FRL"}`
         : `${depth}-bit ${FORMAT_NAMES[format]} needs ${mhz(row.rateKHz)}; ${LINKS[l].name} carries ${LINKS[l].limitLabel}: ${fits ? "fits" : "does not fit"}`,
     `Fits ${LINKS[l].name} at this clock: ${fitting.join(", ") || "nothing"}`,

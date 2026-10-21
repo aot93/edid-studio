@@ -79,7 +79,7 @@ export function NewView({ onCreated }: Props) {
             <p className="hint">
               This raster is too large for a detailed timing descriptor, so it goes in a DisplayID extension block as the preferred
               timing. The base block keeps {FALLBACK.hActive}x{FALLBACK.vActive} at the same refresh for sources that ignore
-              DisplayID.{link === "dvi" ? "" : " An HDMI Forum EEODB in the CTA block tells sources there is a third block."}
+              DisplayID.{link.startsWith("hdmi") ? " An HDMI Forum EEODB in the CTA block tells sources there is a third block." : ""}
             </p>
           )}
         </div>
@@ -150,6 +150,12 @@ export function NewView({ onCreated }: Props) {
               Only tick what you want the GPU to use. Unticked depths are not advertised, so the driver cannot pick them. 4:2:0 applies only to
               standard VIC modes, not to a custom timing.
             </p>
+            {LINKS[link].kind === "dp" && (
+              <p className="hint">
+                DisplayPort sinks use EDID 1.4: the bit depth and YCbCr support go in the base block, which names the DisplayPort interface. There
+                is no CTA block and no HDMI block.
+              </p>
+            )}
           </div>
 
           <div className="card">

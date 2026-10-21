@@ -75,6 +75,16 @@ export const GOLDEN: readonly Golden[] = [
     expectFailures: [],
   },
   {
+    name: "4K60 10-bit RGB and YCbCr, DisplayPort 1.4",
+    bytes: () => serializeEdid(buildEdid({ ...base, link: "dp1.4", formats: ["rgb", "ycbcr444", "ycbcr422"], timing: timing(3840, 2160, "60", "cvt-rb") })),
+    expectFailures: [],
+  },
+  {
+    name: "8K60 10-bit in DisplayID, DisplayPort 2.1 UHBR20",
+    bytes: () => serializeEdid(buildEdid({ ...base, link: "dp2.1-uhbr20", timing: timing(1920, 1080, "60"), displayIdTimings: [displayId(7680, 4320, "60", "cvt-rb2")] })),
+    expectFailures: [],
+  },
+  {
     name: "4K50 10-bit, single mode (no 640x480)",
     bytes: () => serializeEdid(buildEdid({ ...base, include640x480: false, timing: timing(3840, 2160, "50") })),
     expectFailures: [NO_640],

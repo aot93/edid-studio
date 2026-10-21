@@ -11,6 +11,16 @@ export function advertisedColour(edid: Edid): AdvertisedColour {
   const formats: ColourFormat[] = ["rgb"];
   const depths: Depth[] = [8];
   const depths420: Depth[] = [];
+  // EDID 1.4 digital: bits per colour in byte 20 bits 6-4 (code n is 2n + 4 bits), YCbCr 4:4:4 and
+  // 4:2:2 in byte 24 bits 3 and 4 (E-EDID 1.4 tables 3.11 and 3.14; edid-decode parse_base_block()).
+  // DisplayPort sinks say it only here; HDMI sinks say it in the HDMI VSDB below.
+  const b = edid.base;
+  if (b.version === 1 && b.revision >= 4 && b.videoInput & 0x80) {
+    const code = (b.videoInput & 0x70) >> 4;
+    if (code >= 1 && code <= 6) for (const d of [10, 12, 16] as const) if (d <= 2 * code + 4) depths.push(d);
+    if (b.features & 0x08) formats.push("ycbcr444");
+    if (b.features & 0x10) formats.push("ycbcr422");
+  }
   for (const e of edid.extensions) {
     if (e.kind !== "cta") continue;
     if (e.ycbcr444 && !formats.includes("ycbcr444")) formats.push("ycbcr444");
@@ -31,6 +41,18 @@ export function advertisedColour(edid: Edid): AdvertisedColour {
   }
   if (formats.includes("ycbcr420")) depths420.unshift(8);
   return { formats, depths: [...new Set(depths)], depths420: [...new Set(depths420)] };
+}
+
+/**
+ * The link an EDID is for, when the caller does not say: DisplayPort 1.4 for
+ * an EDID 1.4 sink that names the DisplayPort interface (byte 20 bits 3-0 =
+ * 5), HDMI 2.1 when an HDMI Forum block declares FRL, else HDMI 2.0.
+ */
+export function defaultLink(edid: Edid): Link {
+  const b = edid.base;
+  if (b.version === 1 && b.revision >= 4 && b.videoInput & 0x80 && (b.videoInput & 0x0f) === 0x05) return "dp1.4";
+  const frl = edid.extensions.some((e) => e.kind === "cta" && e.dataBlocks.some((d) => d.kind === "hdmiForumVsdb" && d.maxFrlRate > 0));
+  return frl ? "hdmi2.1" : "hdmi2.0";
 }
 
 /** Link report for every detailed timing (DTD or DisplayID Type I) and listed VIC. */

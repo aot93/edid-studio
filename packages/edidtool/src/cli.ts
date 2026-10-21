@@ -10,7 +10,7 @@ import { CliError, EXIT } from "./io.ts";
 const USAGE = `edidtool: build, edit, validate and explain EDIDs
 
   edidtool decode   <file> [--json]
-  edidtool validate <file> [--link hdmi2.0] [--strict] [--second-opinion] [--json]
+  edidtool validate <file> [--link dp1.4] [--strict] [--second-opinion] [--json]
   edidtool timing   --width 3840 --height 2160 --refresh 50 [--formula exact]
                     [--hblank 160 --vblank-lines 60] [--hfp --hsync --vfp --vsync]
                     [--polarity H+V-] [--min-hblank 160] [--explain] [--json]
@@ -23,7 +23,9 @@ const USAGE = `edidtool: build, edit, validate and explain EDIDs
   edidtool convert  in.txt --to hex|bin|c|base64 [-o out]
 
 Formulas: exact, cvt, cvt-rb, cvt-rb2, cvt-rb3, gtf, vic, dmt, manual.
-Links: dvi, hdmi1.4, hdmi2.0. Outputs (-o) are never replaced without --force.
+Links: dvi, hdmi1.4, hdmi2.0, hdmi2.1, dp1.2, dp1.4, dp2.1-uhbr10, dp2.1-uhbr13.5,
+dp2.1-uhbr20. validate defaults to the EDID's own link. Outputs (-o) are never
+replaced without --force.
 Hex output mirrors the input's layout, or is one line; --style one-line|lines.
 Exit codes: 0 clean, 1 warnings, 2 errors (nothing written), 3 usage or I/O.
 `;

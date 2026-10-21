@@ -2,16 +2,55 @@
 // format and depth? The link carries blanking, so load is the pixel clock
 // (total pixels per second) times bits per pixel, not visible pixels.
 
-export type Link = "dvi" | "hdmi1.4" | "hdmi2.0" | "hdmi2.1";
+export type Link = "dvi" | "hdmi1.4" | "hdmi2.0" | "hdmi2.1" | "dp1.2" | "dp1.4" | "dp2.1-uhbr10" | "dp2.1-uhbr13.5" | "dp2.1-uhbr20";
 export type ColourFormat = "rgb" | "ycbcr444" | "ycbcr422" | "ycbcr420";
 export type Depth = 8 | 10 | 12 | 16;
 
-export const LINKS: Record<Link, { readonly name: string; readonly limitKHz: number; readonly limitLabel: string }> = {
-  dvi: { name: "DVI single link", limitKHz: 165_000, limitLabel: "165 MHz pixel clock" },
-  "hdmi1.4": { name: "HDMI 1.4", limitKHz: 340_000, limitLabel: "340 MHz TMDS" },
-  "hdmi2.0": { name: "HDMI 2.0", limitKHz: 600_000, limitLabel: "600 MHz TMDS" },
-  "hdmi2.1": { name: "HDMI 2.1", limitKHz: 600_000, limitLabel: "600 MHz TMDS or 48 Gbps FRL" },
+export interface LinkInfo {
+  readonly name: string;
+  /** "tmds": DVI and HDMI, limited by character rate. "dp": DisplayPort, limited by payload bit rate. */
+  readonly kind: "tmds" | "dp";
+  /** TMDS limit (DVI: pixel clock). Unused for DisplayPort. */
+  readonly limitKHz: number;
+  readonly limitLabel: string;
+  /** DisplayPort: payload over four lanes after line coding, kbit/s. */
+  readonly payloadKbps?: number;
+}
+
+/**
+ * DisplayPort payload, four lanes: 8b/10b for HBR2 and HBR3, 128b/132b for
+ * UHBR (SPEC.md section 7). TODO(verify): FEC, spread-spectrum downspread
+ * and MST overhead take a little more; this is the line-coding bound.
+ */
+const dp = (name: string, gbpsPerLane: number, coding: number): LinkInfo => {
+  const payloadKbps = 4 * gbpsPerLane * 1_000_000 * coding;
+  return { name, kind: "dp", limitKHz: 0, limitLabel: `${(payloadKbps / 1_000_000).toFixed(2)} Gbps`, payloadKbps };
 };
+
+export const LINKS: Record<Link, LinkInfo> = {
+  dvi: { name: "DVI single link", kind: "tmds", limitKHz: 165_000, limitLabel: "165 MHz pixel clock" },
+  "hdmi1.4": { name: "HDMI 1.4", kind: "tmds", limitKHz: 340_000, limitLabel: "340 MHz TMDS" },
+  "hdmi2.0": { name: "HDMI 2.0", kind: "tmds", limitKHz: 600_000, limitLabel: "600 MHz TMDS" },
+  "hdmi2.1": { name: "HDMI 2.1", kind: "tmds", limitKHz: 600_000, limitLabel: "600 MHz TMDS or 48 Gbps FRL" },
+  "dp1.2": dp("DisplayPort 1.2 (HBR2)", 5.4, 8 / 10),
+  "dp1.4": dp("DisplayPort 1.4 (HBR3)", 8.1, 8 / 10),
+  "dp2.1-uhbr10": dp("DisplayPort 2.1 (UHBR10)", 10, 128 / 132),
+  "dp2.1-uhbr13.5": dp("DisplayPort 2.1 (UHBR13.5)", 13.5, 128 / 132),
+  "dp2.1-uhbr20": dp("DisplayPort 2.1 (UHBR20)", 20, 128 / 132),
+};
+
+/** Bits per pixel on DisplayPort: no container, so 4:2:2 is two components and 4:2:0 one and a half. */
+export function dpBitsPerPixel(format: ColourFormat, depth: Depth): number {
+  switch (format) {
+    case "rgb":
+    case "ycbcr444":
+      return 3 * depth;
+    case "ycbcr422":
+      return 2 * depth;
+    case "ycbcr420":
+      return 1.5 * depth;
+  }
+}
 
 /** One HDMI 2.1 Fixed Rate Link rate, as coded in the HDMI Forum VSDB (edid-decode max_frl_rates). */
 export interface FrlRate {
@@ -95,15 +134,22 @@ export interface Feasibility {
   readonly unsupported?: string;
   /** HDMI 2.1: the FRL rate it needs when TMDS cannot carry it. */
   readonly frl?: FrlRate;
-  /** HDMI 2.1: video bit rate in kbit/s, when it goes over FRL or fits nothing. */
+  /** Video bit rate in kbit/s: DisplayPort always, HDMI 2.1 when it goes over FRL. */
   readonly kbps?: number;
 }
 
 /** One row per format and depth: the rate the link must carry and whether it fits. */
 export function feasibility(pixelClockKHz: number, link: Link): Feasibility[] {
   const limit = LINKS[link].limitKHz;
+  const payload = LINKS[link].payloadKbps;
   return FORMATS.flatMap((format) =>
     DEPTHS.map((depth): Feasibility => {
+      if (payload !== undefined) {
+        // DisplayPort carries the stream at pixel clock x bits per pixel against the lane payload.
+        const kbps = pixelClockKHz * dpBitsPerPixel(format, depth);
+        if (format === "ycbcr420" && link === "dp1.2") return { format, depth, rateKHz: pixelClockKHz, kbps, fits: false, unsupported: "4:2:0 needs DisplayPort 1.3 or later" };
+        return { format, depth, rateKHz: pixelClockKHz, kbps, fits: kbps <= payload };
+      }
       if (link === "dvi" && (format !== "rgb" || depth !== 8)) {
         return { format, depth, rateKHz: pixelClockKHz, fits: false, unsupported: "DVI carries 8-bit RGB only" };
       }
@@ -203,7 +249,8 @@ export function linkReport(
       const frl = tooFast.some((r) => r.kbps !== undefined);
       const need = (r: Feasibility) => (r.kbps !== undefined ? `${(r.kbps / 1_000_000).toFixed(2)} Gbps` : `${(r.rateKHz / 1000).toFixed(2)} MHz`);
       const needs = tooFast.map((r) => `${r.depth}-bit RGB needs ${need(r)}`).join(", ");
-      const via = (a: Feasibility) => (a.frl ? `FRL ${a.frl.gbpsPerLane} Gbps x ${a.frl.lanes}` : `${(a.rateKHz / 1000).toFixed(2)} MHz`);
+      const via = (a: Feasibility) =>
+        a.frl ? `FRL ${a.frl.gbpsPerLane} Gbps x ${a.frl.lanes}` : a.kbps !== undefined ? `${(a.kbps / 1_000_000).toFixed(2)} Gbps` : `${(a.rateKHz / 1000).toFixed(2)} MHz`;
       message =
         `${mode} at ${(pixelClockKHz / 1000).toFixed(2)} MHz: ${needs}${frl ? "" : " TMDS"}, above ${limit.name}'s ${limit.limitLabel}. ` +
         (alternatives.length > 0
