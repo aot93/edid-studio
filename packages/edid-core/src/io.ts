@@ -1,6 +1,6 @@
 // Import and export entry points: binary, hex text in any common layout
-// (C arrays included), and base64. TODO(verify): Windows .reg overrides need
-// the per-display registry key; not done yet.
+// (C arrays included), and base64. No Windows .reg overrides: the app never
+// writes to a machine (SPEC.md section 13).
 
 import { EDID_HEADER, manufacturerId } from "./base-block.ts";
 import { bytesEqual, slice } from "./bytes.ts";

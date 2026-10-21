@@ -227,12 +227,12 @@ describe("convert", () => {
     expect(bytesOf(out)).toEqual(bytesOf(WORKING));
   });
 
-  it("writes binary only to a file, and says .reg is not supported yet", () => {
+  it("writes binary only to a file, and has no .reg output (the app never writes to a machine)", () => {
     expect(run(["convert", WORKING, "--to", "bin"]).code).toBe(3);
     expect(run(["convert", WORKING, "--to", "bin", "-o", tmp("w.bin")]).code).toBe(0);
     expect(readFileSync(tmp("w.bin"))).toEqual(Buffer.from(bytesOf(WORKING)));
     const reg = run(["convert", WORKING, "--to", "reg"]);
     expect(reg.code).toBe(3);
-    expect(reg.err).toMatch(/\.reg/);
+    expect(reg.err).toMatch(/--to must be hex, bin, c or base64/);
   });
 });

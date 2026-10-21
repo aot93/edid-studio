@@ -374,12 +374,9 @@ export function convert(args: readonly string[]): number {
   const p = parse(args, OUTPUT_OPTIONS);
   const input = readEdid(positional(p, 0, "the EDID file to convert"));
   const to = required(p, "to");
-  if (to === "reg") {
-    throw new CliError(EXIT.usage, "--to reg is not supported yet: a Windows .reg override needs the display's registry key (TODO(verify) against Microsoft's EDID override documentation)");
-  }
   const formats: Record<string, ExportFormat> = { hex: "hex", bin: "binary", c: "c", base64: "base64" };
   const fmt = formats[to];
-  if (fmt === undefined) throw new CliError(EXIT.usage, "--to must be hex, bin, c, base64 or reg");
+  if (fmt === undefined) throw new CliError(EXIT.usage, "--to must be hex, bin, c or base64");
   if (fmt === "binary" && str(p, "o") === undefined) throw new CliError(EXIT.usage, "binary output needs a file: add -o <file>");
   const data = encoding(() => (fmt === "hex" ? exportEdid(input.edid, "hex", hexStyleFor(str(p, "style"), input)) : exportEdid(input.edid, fmt)));
   writeOutput(str(p, "o"), data, flag(p, "force"));
