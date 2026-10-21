@@ -80,8 +80,8 @@ export {
 export type { Encodings, Formula, Porches, Rational, Rb3Options, Timing, TimingRequest, TimingResult } from "./timing.ts";
 export { findDmt, findVic, lookupDmt, matchingStandards, standardRefreshHz } from "./standard-timings.ts";
 export type { DmtTiming, StandardTiming as StandardVideoTiming, VicTiming } from "./standard-timings.ts";
-export { DEPTHS, feasibility, FORMAT_NAMES, FORMATS, likelyChoice, linkReport, LINKS, tmdsRateKHz } from "./link.ts";
-export type { AdvertisedColour, ColourFormat, Depth, Feasibility, Link, ModeReport } from "./link.ts";
+export { DEPTHS, feasibility, FORMAT_NAMES, FORMATS, FRL_RATES, frlBitsPerPixel, frlRateFor, likelyChoice, linkReport, LINKS, tmdsRateKHz } from "./link.ts";
+export type { AdvertisedColour, ColourFormat, Depth, Feasibility, FrlRate, Link, ModeReport } from "./link.ts";
 export { advertisedColour, analyzeLink } from "./analyze.ts";
 export {
   decodeStandardTiming,

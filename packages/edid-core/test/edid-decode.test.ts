@@ -62,6 +62,10 @@ const MIRRORS: Partial<Record<RuleId, RegExp>> = {
   "range.covers-timings": /out of range of the Monitor Ranges/,
   "cta.byte3-consistent": /Byte 3 must be the same/,
   "structure.block-map": /EDID 1\.3 requires a Block Map Extension in Block 1/,
+  "hdmi.forum-rate": /Max TMDS rate is > 0 and <= 340 or > 600/,
+  "hdmi.frl-tmds": /Max Fixed Rate Link is (1, but Max TMDS rate < 300|>= 2, but Max TMDS rate < 600)/,
+  "hdmi.uhd-vic": /UHD VIC bit is 0|UHD VIC bit is 1, but no related VIC codes/,
+  "hdmi.vrr-range": /VRRmin > 48|VRRmin == 0, but VRRmax isn't|0 < VRRmax < 100/,
   "displayid.section": /DisplayID length \d+ is greater than 121|exceeds the number of bytes remaining|Non-0 filler bytes in the DisplayID block|DisplayID filler is non-0/,
 };
 

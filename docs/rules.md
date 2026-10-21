@@ -47,6 +47,10 @@ warn is warning), except where a hardware-verified EDID shows a source accepts i
 | `hdmi.vsdb-tmds` | error | HDMI VSDB max TMDS clock is at most 340 MHz |
 | `hdmi.max-tmds` | error | Max TMDS covers the fastest mode |
 | `hdmi.vic-equivalents` | error | HDMI VICs have their CTA-861 VICs in the video data block |
+| `hdmi.forum-rate` | error | HDMI Forum max TMDS is above 340 and at most 600 MHz |
+| `hdmi.frl-tmds` | error | FRL comes with a 600 MHz max TMDS (300 MHz for 3x3) |
+| `hdmi.uhd-vic` | warning | The UHD VIC bit matches the HDMI VICs listed |
+| `hdmi.vrr-range` | error | The HDMI 2.1 VRR range is valid |
 | `hdmi.forum-vsdb-needed` | error | Modes above 340 MHz have an HDMI Forum VSDB with SCDC |
 | `color.y444-flag` | error | DC_Y444 needs YCbCr 4:4:4 support |
 | `color.y444-depth` | warning | DC_Y444 needs a deep colour depth |

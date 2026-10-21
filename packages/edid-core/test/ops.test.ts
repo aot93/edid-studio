@@ -20,6 +20,7 @@ import {
   setHdmiDeepColour,
   setHf420DeepColour,
   setMonitorName,
+  setRangeLimits,
 } from "../src/index.ts";
 import type { CtaExtension, Edid } from "../src/index.ts";
 import { CORPUS_DIR } from "./corpus.ts";
@@ -208,5 +209,22 @@ describe("addDisplayIdTiming", () => {
     const e = addDisplayIdTiming(base, wide);
     expect(e.extensions.map((x) => x.kind)).toEqual(["displayid"]);
     roundTrips(e);
+  });
+});
+
+describe("range limits above 255", () => {
+  const e13 = load("dell-p2415q-hdmi2.0");
+  const rl = (e: Edid) => e.base.descriptors.find((d) => d.kind === "rangeLimits");
+
+  it("EDID 1.4 stores them with the +255 offset flags (E-EDID 1.4 table 3.26)", () => {
+    const e14 = { ...e13, base: { ...e13.base, revision: 4 } };
+    const out = setRangeLimits(e14, { vHz: [24, 300], hKHz: [270, 280], maxClockMHz: 1200, gtf: "none" });
+    expect(rl(out)).toMatchObject({ offsetFlags: 0x0e, minVerticalHz: 24, maxVerticalHz: 45, minHorizontalKHz: 15, maxHorizontalKHz: 25 });
+    roundTrips(out);
+    expect(() => setRangeLimits(e14, { vHz: [24, 511], hKHz: [30, 80], maxClockMHz: 600, gtf: "none" })).toThrow(/510/);
+  });
+
+  it("EDID 1.3 has no offsets: auto limits cap at 255, which edid-decode reads as 255 or more", () => {
+    expect(() => setRangeLimits(e13, { vHz: [24, 60], hKHz: [30, 275], maxClockMHz: 600, gtf: "none" })).toThrow(/255/);
   });
 });

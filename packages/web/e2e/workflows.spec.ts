@@ -140,3 +140,18 @@ test("looks up a VESA DMT timing and names the matching VIC", async ({ page }) =
   await expect(page.locator(".tresult")).toContainText("VIC 16, 76");
   await expect(page.locator(".tresult")).toContainText("DMT 0x52");
 });
+
+test("builds a 4K120 HDMI 2.1 EDID that declares FRL", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Create a new EDID" }).click();
+  await page.getByRole("combobox", { name: "Link" }).selectOption("hdmi2.1");
+  await page.getByLabel("Formula").selectOption("cvt-rb2");
+  await fill(page, { Width: "3840", Height: "2160", "Refresh (Hz)": "120" });
+  await expect(page.locator(".linktable")).toContainText("FRL");
+  await page.getByRole("button", { name: "Create EDID" }).click();
+  await expect(page.locator(".issues li.error")).toHaveCount(0);
+  const { edid } = importEdid(await download(page));
+  const cta = edid.extensions.find((e) => e.kind === "cta");
+  const forum = cta?.kind === "cta" ? cta.dataBlocks.find((b) => b.kind === "hdmiForumVsdb") : undefined;
+  expect(forum?.kind === "hdmiForumVsdb" && forum.maxFrlRate).toBeGreaterThanOrEqual(2);
+});

@@ -382,7 +382,15 @@ export interface RangeLimitsSpec {
  * The maximum clock is rounded up to a multiple of 10 MHz. Uses the existing
  * range limits slot, or else a dummy slot.
  */
+/**
+ * Writes a range limits descriptor. EDID 1.4 stores rates above 255 with
+ * the +255 offset flags in byte 4 (E-EDID 1.4 table 3.26: bit 1 max V,
+ * bits 1-0 both V, bit 3 max H, bits 3-2 both H), so up to 510. EDID 1.3
+ * has no offsets and stops at 255.
+ */
 export function setRangeLimits(edid: Edid, spec: RangeLimitsSpec): Edid {
+  const offsets = edid.base.version === 1 && edid.base.revision >= 4;
+  const top = offsets ? 510 : 255;
   const values: [string, number][] = [
     ["minimum vertical rate", spec.vHz[0]],
     ["maximum vertical rate", spec.vHz[1]],
@@ -390,21 +398,23 @@ export function setRangeLimits(edid: Edid, spec: RangeLimitsSpec): Edid {
     ["maximum horizontal rate", spec.hKHz[1]],
   ];
   for (const [name, v] of values) {
-    // TODO(verify): rates above 255 need the EDID 1.4 offset flags; not supported yet.
-    if (!Number.isInteger(v) || v < 1 || v > 255) throw new EdidEncodeError(name, `${name} ${v} must be a whole number from 1 to 255`);
+    if (!Number.isInteger(v) || v < 1 || v > top) throw new EdidEncodeError(name, `${name} ${v} must be a whole number from 1 to ${top}${offsets ? "" : " (EDID 1.3 has no rate offsets)"}`);
   }
   if (spec.vHz[0] > spec.vHz[1] || spec.hKHz[0] > spec.hKHz[1]) {
     throw new EdidEncodeError("range limits", "each minimum must not exceed its maximum");
   }
+  const over = (v: number) => (v > 255 ? 255 : 0);
+  const offsetFlags =
+    (spec.vHz[1] > 255 ? (spec.vHz[0] > 255 ? 0x03 : 0x02) : 0) | (spec.hKHz[1] > 255 ? (spec.hKHz[0] > 255 ? 0x0c : 0x08) : 0);
   const clock = Math.ceil(spec.maxClockMHz / 10);
   if (clock < 1 || clock > 255) throw new EdidEncodeError("maximum pixel clock", `maximum pixel clock ${spec.maxClockMHz} MHz must be 10 to 2550 MHz`);
   const d: Descriptor = {
     kind: "rangeLimits",
-    offsetFlags: 0,
-    minVerticalHz: spec.vHz[0],
-    maxVerticalHz: spec.vHz[1],
-    minHorizontalKHz: spec.hKHz[0],
-    maxHorizontalKHz: spec.hKHz[1],
+    offsetFlags,
+    minVerticalHz: spec.vHz[0] - over(spec.vHz[0]),
+    maxVerticalHz: spec.vHz[1] - over(spec.vHz[1]),
+    minHorizontalKHz: spec.hKHz[0] - over(spec.hKHz[0]),
+    maxHorizontalKHz: spec.hKHz[1] - over(spec.hKHz[1]),
     maxPixelClock10MHz: clock,
     timingSupport: spec.gtf === "none" ? 0x01 : 0x00,
     timingData: [0x0a, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20],
@@ -446,9 +456,12 @@ export function autoRangeLimits(edid: Edid, gtf: RangeLimitsSpec["gtf"] = "none"
   const hKHz = modes.map((m) => m.hKHz);
   // Standard timings state their refresh exactly; their line rate depends on GTF or CVT, so they set only the vertical range.
   const refreshes = [...modes.map((m) => m.refreshHz), ...edid.base.standardTimings.flatMap((c) => decodeStandardTiming(c)?.refreshHz ?? [])];
+  // EDID 1.3 stops at 255, which edid-decode reads as "255 or more"; 1.4 reaches 510 with offsets.
+  const top = edid.base.version === 1 && edid.base.revision >= 4 ? 510 : 255;
+  const cap = (v: number) => Math.min(top, v);
   return {
-    vHz: [Math.floor(Math.min(...refreshes)), Math.ceil(Math.max(...refreshes))],
-    hKHz: [Math.floor(Math.min(...hKHz)), Math.ceil(Math.max(...hKHz))],
+    vHz: [cap(Math.floor(Math.min(...refreshes))), cap(Math.ceil(Math.max(...refreshes)))],
+    hKHz: [cap(Math.floor(Math.min(...hKHz))), cap(Math.ceil(Math.max(...hKHz)))],
     maxClockMHz: Math.ceil(Math.max(...modes.map((m) => m.clockKHz)) / 10_000) * 10,
     gtf,
   };

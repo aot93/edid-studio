@@ -3,6 +3,8 @@ import type { ReactNode } from "react";
 import {
   describeDisplayIdTiming,
   describeDtd,
+  FRL_RATES,
+  setHdmiCaps,
   lookupVic,
   manufacturerId,
   modeLabel,
@@ -15,7 +17,7 @@ import {
   setHf420DeepColour,
   setMonitorName,
 } from "@edid-studio/core";
-import type { DetailedTimingDescriptor, Descriptor, DisplayIdTiming, Edid, LayoutNode } from "@edid-studio/core";
+import type { DetailedTimingDescriptor, Descriptor, DisplayIdTiming, Edid, HdmiForumDsc, HdmiForumFeatures, LayoutNode } from "@edid-studio/core";
 import { ctaAt, dataBlockAt, descriptorAt, displayIdAt, displayIdBlockAt, hex, nodeLabel, svdLabel } from "../model-view.ts";
 import { ColourForm, EstablishedTimingsEditor, RangeLimitsEditor, StandardTimingsEditor } from "./BaseEditors.tsx";
 
@@ -83,6 +85,22 @@ function DisplayIdTimingView({ t }: { readonly t: DisplayIdTiming }) {
       ]}
     />
   );
+}
+
+function frlLabel(code: number): string {
+  const r = FRL_RATES.find((x) => x.code === code);
+  return r ? `${r.gbpsPerLane} Gbps x ${r.lanes} lanes (${((r.lanes * r.gbpsPerLane * 16) / 18).toFixed(1)} Gbps payload)` : "none (TMDS only)";
+}
+
+function features21(f: HdmiForumFeatures): string {
+  const on = [f.allm && "ALLM", f.qms && "QMS", f.mDelta && "Mdelta", f.fva && "Fast Vactive", f.negativeMvrr && "negative Mvrr", f.cinemaVrr && "CinemaVRR (deprecated)", f.fapaEndExtended && "FAPA end extended", f.fapaStartLocation && "FAPA start location"].filter(Boolean);
+  return on.length > 0 ? on.join(", ") : "none";
+}
+
+function dscSummary(d: HdmiForumDsc): string {
+  if (!d.dsc12a) return "not supported";
+  const bpc = [d.bpc10 && "10", d.bpc12 && "12", d.bpc16 && "16"].filter(Boolean);
+  return `DSC 1.2a${d.native420 ? ", 4:2:0" : ""}${bpc.length > 0 ? `, ${bpc.join("/")} bpc` : ""}; slices code ${d.maxSlices}; DSC FRL ${frlLabel(d.maxFrlRate)}`;
 }
 
 const mhz = (khz: number) => `${(khz / 1000).toFixed(khz % 1000 === 0 ? 0 : 3)} MHz`;
@@ -414,12 +432,26 @@ function DataBlockView({ edid, extension, index, edit }: { readonly edid: Edid; 
       <>
         <Fields
           rows={[
+            ["Form", b.scdb ? "HDMI Forum SCDB (extended tag 0x79)" : "HDMI Forum VSDB"],
             ["Max TMDS character rate", b.maxTmdsCharRate5MHz === 0 ? "340 MHz or less" : `${b.maxTmdsCharRate5MHz * 5} MHz`],
             ["SCDC", yesNo(b.scdcPresent)],
             ["Scrambling at 340 MHz or less", yesNo(b.lte340McscScramble)],
-            ["Max FRL rate code", String(b.maxFrlRate)],
+            ["UHD VIC", yesNo(b.uhdVic)],
+            ...(b.features21 ? [["HDMI 2.1 features", features21(b.features21)] as const] : []),
+            ...(b.vrr ? [["VRR", b.vrr.max === 0 && b.vrr.min === 0 ? "none" : `${b.vrr.min}-${b.vrr.max} Hz`] as const] : []),
+            ...(b.dsc ? [["DSC", dscSummary(b.dsc)] as const] : []),
           ]}
         />
+        <label className="sub" htmlFor="frl-rate">
+          Max FRL rate (HDMI 2.1)
+        </label>
+        <select id="frl-rate" value={b.maxFrlRate} onChange={(e) => edit(`Set max FRL rate to ${frlLabel(Number(e.target.value))}`, (x) => setHdmiCaps(x, { maxFrlRate: Number(e.target.value) }))}>
+          {[0, 1, 2, 3, 4, 5, 6].map((c) => (
+            <option key={c} value={c}>
+              {frlLabel(c)}
+            </option>
+          ))}
+        </select>
         <div className="sub">Deep colour for YCbCr 4:2:0</div>
         <div className="checks">
           <Check label="10-bit" checked={b.dc30bit420} onChange={(v) => edit(`${v ? "Allow" : "Remove"} 10-bit 4:2:0`, (e) => setHf420DeepColour(e, { dc30bit420: v }))} />
