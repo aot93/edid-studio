@@ -45,12 +45,12 @@ The primary user is an AV, LED or projection engineer who configures sources and
 
 ## Architecture and tech stack
 
-One pure core library does all EDID work; the CLI, the web UI and platform adapters are thin layers over it.
+One pure core library does all EDID work; the CLI and the web UI are thin layers over it.
 
 - **`edid-core`** (TypeScript, strict mode, zero runtime dependencies): parse, model, serialize, timing engine, link analyzer, validator, operations. It runs in Node and in the browser.
 - **`edidtool`** CLI (Node): scripting, CI and recipes.
-- **Web UI** (React and Vite): a local-first app with the library stored on disk or in IndexedDB. A desktop wrapper (Tauri) is optional and only needed for device I/O.
-- **Platform adapters**: read-only: Windows registry, Linux sysfs, macOS ioreg. These live in the CLI or desktop layer, never in the core. The app never writes to a machine (owner decision, 2026-10-21).
+- **Web UI** (React and Vite): a local-first app with the library stored on disk or in IndexedDB.
+- **No platform adapters**: the app neither reads EDIDs from connected displays nor writes to a machine (owner decisions, 2026-10-21). EDIDs come in as files or pasted text and leave as files.
 - **External oracle**: `edid-decode` run as a subprocess, in CI and optionally at runtime. Check its licence before bundling it.
 
 Two rules keep it reliable. The serializer is the only code that writes EDID bytes, so UI and CLI never build hex themselves. Every operation returns a new model and is re-validated before anything is exported.
@@ -62,7 +62,6 @@ flowchart TB
   subgraph clients[Clients]
     CLI[edidtool CLI]
     UI[Web UI]
-    AD[Platform adapters]
   end
   subgraph core[edid-core]
     P[Parser] --> M[Model]
@@ -74,11 +73,10 @@ flowchart TB
   end
   CLI --> core
   UI --> core
-  AD --> core
   V -. second opinion .-> ED[(edid-decode)]
 ```
 
-The CLI, the UI and the adapters call the core; only the validator reaches outside it, to `edid-decode`.
+The CLI and the UI call the core; only the validator reaches outside it, to `edid-decode`.
 
 ## Data model and file formats
 
@@ -103,7 +101,7 @@ The tree holds a base block (identity, version, input definition, chromaticity, 
 | DisplayID Type VII timings, CTA video timing, video format preference | v1.1 | Type VII and other DisplayID data blocks are preserved raw |
 | Unknown blocks | MVP | Preserved byte for byte |
 
-**Import:** hex text in any common layout (spaces, commas, `0x` prefixes, offset dumps), binary, C array, base64, and live read (section 13).
+**Import:** hex text in any common layout (spaces, commas, `0x` prefixes, offset dumps), binary, C array and base64. No live read from connected displays (owner decision, 2026-10-21).
 
 **Export:** hex text in the same style as the input, binary, C array, base64, JSON model. No Windows `.reg` override: the app never writes to a machine (owner decision, 2026-10-21).
 
@@ -266,7 +264,7 @@ The MVP is the core library, CLI and recipes; the UI follows once the engine is 
 | Release | Scope |
 | --- | --- |
 | MVP | Parse and serialize base and CTA blocks with unknown-block preservation; hex, binary, C array and base64 import and export; tier 1 and 2 validation; timing engine with exact-refresh solver and DTD limits; VIC and DMT tables; link analyzer for HDMI 1.4, 2.0 and DisplayPort; operations and recipes; CLI; golden-recipe test; library as plain files with JSON sidecars |
-| v1 | Web UI (editor, wizard, timing lab, compare, export); audio, colorimetry and HDR editing; multi-output sets; hardware verification records; read EDIDs from Windows, Linux and macOS |
+| v1 | Web UI (editor, wizard, timing lab, compare, export); audio, colorimetry and HDR editing; multi-output sets; hardware verification records |
 | v1.1 | DisplayID Type I and VII timings and CTA video timing blocks; HDMI Forum SCDB (FRL, DSC) and HDMI 2.1 link rules; EDID 1.4 base features; video format preference block |
 | Later | Device profile plugins (for example Tessera). No programming of EDID emulators over DDC (owner decision, 2026-10-21) |
 
@@ -300,7 +298,6 @@ edidtool build   --base original.txt --width 3840 --height 2160 --refresh 50 \
 edidtool recipe run recipe.json -o out.txt
 edidtool diff    a.txt b.txt
 edidtool convert in.txt --to bin|hex|c|base64
-edidtool read    [--display <id>]          # v1, platform adapters
 ```
 
 | Exit code | Meaning |
@@ -327,7 +324,7 @@ The tool reads freely and never writes to a machine (owner decision, 2026-10-21)
 
 - **Primary delivery: download, then load in the NVIDIA app.** Export produces a file the user carries to the workstation (section 3). The NVIDIA Control Panel accepts any file extension as long as the contents are a VESA EDID, and exports EDIDs as hex text in a `.txt` file. The exact text layout NVIDIA writes and the layouts it accepts are `TODO(verify)` against a real export (the Tessera fixtures are believed to be NVIDIA exports). Until verified, hex export mirrors the layout of the imported file, so a round trip through EDID Studio keeps NVIDIA's own layout. The export dialog shows the load steps and advises a reboot (or display re-plug) after loading, since the driver caches EDIDs. Linux workstations use the driver's `CustomEDID` X option with a file path (`TODO(verify)` accepted formats).
 - **Download names:** file names are built from the EDID's monitor name, which is untrusted text. They are reduced to letters, digits, `-`, `_` and `.`, kept short, and never a Windows reserved name (`CON`, `NUL`, `COM1` and so on).
-- **Read (optional, lower priority):** the tool usually runs on a different machine from the GPU, so live read is a convenience, not a workflow. Windows registry EDID values under the display's device parameters, Linux `/sys/class/drm/*/edid`, macOS `ioreg`. Read-only, no elevation.
+- **No live read:** the tool usually runs on a different machine from the GPU, so it does not read EDIDs from connected displays (owner decision, 2026-10-21; this replaces the planned read adapters).
 - **No apply:** the app does not write EDIDs to a machine (owner decision, 2026-10-21; this replaces the planned guarded apply).
 - **Driver caches:** GPU drivers cache EDIDs. The export dialog lists the steps to make a driver re-read them after the user loads the file.
 - **Hardware targets:** most processors and EDID emulators take `.bin` or hex text. Device profiles record which format each device accepts. The first profile is "NVIDIA Control Panel (RTX PRO / Quadro)": hex text, `.txt`.
@@ -390,7 +387,7 @@ Build in this order, one milestone per pull request; a milestone is done only wh
 | M2 Timing and link | Timing engine, DTD limits, exact-refresh solver, VIC and DMT tables, link analyzer | Acceptance tests 2, 3, 4, 6, 9 pass |
 | M3 CLI and recipes | All CLI commands, operations, recipe runner | Acceptance test 1 passes |
 | M4 Web UI | Library, editor, wizard, timing lab, compare, export | Every screen in section 11 works offline |
-| M5 Platform I/O (optional) | Read-only adapters. Deprioritised: users load EDIDs through the NVIDIA Control Panel on a separate machine. No apply: the app never writes to a machine (owner decision, 2026-10-21) | Read matches the live EDID byte for byte |
+| ~~M5 Platform I/O~~ | Dropped (owner decision, 2026-10-21): no reading from connected displays and no writing to a machine | — |
 | M6 v1.1 formats | DisplayID, HDMI Forum SCDB, HDMI 2.1 rules | Fixtures for each new block round-trip |
 
 Save the block below as `CLAUDE.md` in the repo root, with this document as `SPEC.md`.
@@ -413,7 +410,7 @@ Save the block below as `CLAUDE.md` in the repo root, with this document as `SPE
 Five answers from the owner would settle the remaining design choices. Answers recorded 2026-10-14.
 
 - [x] Primary OS, and how do EDIDs reach the hardware: file upload to the processor or emulator, a Windows override, or both?
-  **Answer:** Linux and Windows; the macOS adapter is lower priority. Users bring EDIDs in by uploading a file or pasting a block, and the UI may become a public site (section 13, untrusted input). Finished EDIDs are downloaded (usually `.txt`) and loaded by hand through the NVIDIA Control Panel on an RTX PRO / Quadro workstation, typically a separate machine (section 13).
+  **Answer:** Linux and Windows; the macOS adapter is lower priority (superseded 2026-10-21: no platform adapters at all). Users bring EDIDs in by uploading a file or pasting a block, and the UI may become a public site (section 13, untrusted input). Finished EDIDs are downloaded (usually `.txt`) and loaded by hand through the NVIDIA Control Panel on an RTX PRO / Quadro workstation, typically a separate machine (section 13).
 - [x] Which links matter first: HDMI 2.0 only, or also HDMI 2.1 FRL and DisplayPort?
   **Answer:** HDMI 2.0 first. DisplayPort and HDMI 2.1 FRL follow after it.
 - [x] Build order: CLI first as specified, or the web UI first?
