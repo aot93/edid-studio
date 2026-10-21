@@ -1,6 +1,7 @@
 import { EDID_HEADER, parseBaseBlock, serializeBaseBlock } from "./base-block.ts";
 import { BLOCK_SIZE, blockChecksum, blockSum, byteAt, bytesEqual, slice } from "./bytes.ts";
 import { eeodbCountInBlock, hfEeodbBlockCount, parseCtaExtension, serializeCtaExtension } from "./cta.ts";
+import { parseDisplayIdExtension, serializeDisplayIdExtension } from "./displayid.ts";
 import { EdidExportError, EdidParseError } from "./errors.ts";
 import type { Edid, Extension } from "./model.ts";
 
@@ -90,7 +91,7 @@ export function parseEdid(bytes: ArrayLike<number>): Edid {
   const extensions: Extension[] = [];
   for (let i = 1; i < blockCount; i++) {
     const block = slice(bytes, i * BLOCK_SIZE, (i + 1) * BLOCK_SIZE - 1);
-    extensions.push(parseCtaExtension(block) ?? { kind: "raw", bytes: block });
+    extensions.push(parseCtaExtension(block) ?? parseDisplayIdExtension(block) ?? { kind: "raw", bytes: block });
   }
   return { base, extensions };
 }
@@ -98,7 +99,7 @@ export function parseEdid(bytes: ArrayLike<number>): Edid {
 /** Serializes the model to bytes. The only code that produces EDID bytes. */
 export function serializeEdid(edid: Edid): Uint8Array {
   const extensions = edid.extensions.map((ext) =>
-    ext.kind === "cta" ? serializeCtaExtension(ext) : rawExtension(ext.bytes),
+    ext.kind === "cta" ? serializeCtaExtension(ext) : ext.kind === "displayid" ? serializeDisplayIdExtension(ext) : rawExtension(ext.bytes),
   );
   const base = [...serializeBaseBlock(edid.base), extensionFlag(extensions)];
   const blocks = [base, ...extensions];

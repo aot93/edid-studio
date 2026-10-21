@@ -14,6 +14,8 @@ warn is warning), except where a hardware-verified EDID shows a source accepts i
 | `cta.revision` | warning | CTA-861 extension is revision 3 |
 | `cta.offset` | error | CTA DTD offset matches the data block collection |
 | `cta.padding` | error | CTA padding after the DTDs is zero |
+| `structure.block-map` | error | EDID 1.3 with more than two blocks has a block map or an HDMI Forum EEODB |
+| `displayid.section` | error | DisplayID sections are well formed |
 | `descriptor.header` | error | Display descriptor bytes 2 and 4 are zero |
 | `descriptor.tag` | error | Display descriptor tag is defined |
 | `descriptor.all-zero` | warning | Unused descriptors are dummy descriptors |

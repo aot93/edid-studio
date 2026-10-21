@@ -1,5 +1,16 @@
 import { useState } from "react";
-import { addDetailedTiming, autoRangeLimits, keepOnlyModes, modeLabel, describeDtd, replaceDescriptor, setPreferredTiming, setRangeLimits } from "@edid-studio/core";
+import {
+  addDetailedTiming,
+  addDisplayIdTiming,
+  autoRangeLimits,
+  describeDisplayIdTiming,
+  describeDtd,
+  keepOnlyModes,
+  modeLabel,
+  replaceDescriptor,
+  setPreferredTiming,
+  setRangeLimits,
+} from "@edid-studio/core";
 import type { Edid, Link, TimingResult } from "@edid-studio/core";
 import type { EditFn, TimingTarget } from "./Inspector.tsx";
 import { DEFAULT_SEED, seedFromDtd, TimingEditor } from "./TimingEditor.tsx";
@@ -24,7 +35,9 @@ export function TimingPanel({ target, link, onEdit, onClose }: Props) {
   const [fitRanges, setFitRanges] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const dtd = result?.dtd;
-  const label = dtd ? modeLabel(describeDtd(dtd)) : "";
+  // Only offered when the raster does not fit a DTD, which sources support more widely.
+  const displayId = dtd ? undefined : result?.displayId;
+  const label = dtd ? modeLabel(describeDtd(dtd)) : displayId ? modeLabel(describeDisplayIdTiming(displayId)) : "";
 
   const apply = (what: string, f: (e: Edid) => Edid) => {
     const err = onEdit(what, (e) => (fitRanges ? refitRanges(f(e)) : f(e)));
@@ -61,6 +74,11 @@ export function TimingPanel({ target, link, onEdit, onClose }: Props) {
             <button className="btn" disabled={!dtd} onClick={() => dtd && apply(`Add timing ${label}`, (e) => addDetailedTiming(e, dtd))}>
               Add as an extra timing
             </button>
+            {displayId && (
+              <button className="btn primary" onClick={() => apply(`Add DisplayID timing ${label}`, (e) => addDisplayIdTiming(e, displayId))}>
+                Add as preferred DisplayID timing
+              </button>
+            )}
           </>
         )}
         <label>
@@ -71,6 +89,13 @@ export function TimingPanel({ target, link, onEdit, onClose }: Props) {
           Cancel
         </button>
       </div>
+      {displayId && (
+        <p className="hint">
+          {target.mode === "replace"
+            ? "This raster does not fit a detailed timing descriptor, so it cannot replace one. Add it as a DisplayID timing instead."
+            : "This raster does not fit a detailed timing descriptor. It goes in a DisplayID extension block; the existing preferred timing stays for sources that ignore DisplayID."}
+        </p>
+      )}
       {error !== null && (
         <p className="field-error" role="alert">
           {error}

@@ -12,11 +12,14 @@ import { decodeStandardTiming, ESTABLISHED_TIMINGS, isEstablishedSet, UNUSED_STA
 import { encodeChromaticity, SRGB } from "./build.ts";
 import { BLOCK_SIZE, blockChecksum, blockSum, byteAt, bytesEqual, isAllZero, slice } from "./bytes.ts";
 import { describeDtd, lookupVic } from "./describe.ts";
+import { describeDisplayIdTiming, displayIdTimings } from "./displayid.ts";
+import { EXT_HF_EEODB } from "./cta.ts";
+import { DISPLAYID_EXTENSION_TAG, MAX_SECTION_LENGTH } from "./displayid.ts";
 import { declaredExtensionCount, expectedEdidLength, parseEdid } from "./edid.ts";
 import { feasibility, LINKS, tmdsRateKHz } from "./link.ts";
 import type { Link } from "./link.ts";
 import type { NodeRef } from "./layout.ts";
-import type { CtaExtension, Descriptor, Edid, HdmiVsdb } from "./model.ts";
+import type { CtaExtension, DataBlock, Descriptor, Edid, HdmiVsdb } from "./model.ts";
 import { autoRangeLimits, makePreferred, removeHdmiVideo, removeSvd, setHdmiDeepColour, setHf420DeepColour, setRangeLimits, setStandardTimings } from "./ops.ts";
 
 export type Severity = "error" | "warning" | "info";
@@ -50,6 +53,8 @@ export const RULES = {
   "cta.revision": { tier: 1, severity: "warning", title: "CTA-861 extension is revision 3" },
   "cta.offset": { tier: 1, severity: "error", title: "CTA DTD offset matches the data block collection" },
   "cta.padding": { tier: 1, severity: "error", title: "CTA padding after the DTDs is zero" },
+  "structure.block-map": { tier: 1, severity: "error", title: "EDID 1.3 with more than two blocks has a block map or an HDMI Forum EEODB" },
+  "displayid.section": { tier: 1, severity: "error", title: "DisplayID sections are well formed" },
   "descriptor.header": { tier: 1, severity: "error", title: "Display descriptor bytes 2 and 4 are zero" },
   "descriptor.tag": { tier: 1, severity: "error", title: "Display descriptor tag is defined" },
   "descriptor.all-zero": { tier: 1, severity: "warning", title: "Unused descriptors are dummy descriptors" },
@@ -148,6 +153,7 @@ export function validateBytes(bytes: ArrayLike<number>, options: ValidationOptio
       );
     }
     if (b > 0) issues.push(...ctaBlockStructure(slice(bytes, b * BLOCK_SIZE, (b + 1) * BLOCK_SIZE), b));
+    if (b > 0) issues.push(...displayIdBlockStructure(slice(bytes, b * BLOCK_SIZE, (b + 1) * BLOCK_SIZE), b));
   }
   const edid = parseEdid(bytes);
   issues.push(...validateEdid(edid, options));
@@ -173,6 +179,31 @@ function ctaBlockStructure(block: readonly number[], blockNumber: number): Issue
   if (!isAllZero(slice(block, d, 127))) {
     return [issue("cta.padding", `Block ${blockNumber} has non-zero bytes in its padding after the DTDs.`, { where })];
   }
+  return [];
+}
+
+/**
+ * Byte-level checks of a DisplayID section in an extension block (edid-decode
+ * parse_displayid_block(), displayid_block(); drm validate_displayid()).
+ */
+function displayIdBlockStructure(block: readonly number[], blockNumber: number): Issue[] {
+  const b = (i: number) => byteAt(block, i);
+  if (b(0) !== DISPLAYID_EXTENSION_TAG) return [];
+  const where: NodeRef = { type: "block", block: blockNumber };
+  const bad = (why: string) => [issue("displayid.section", `Block ${blockNumber} is a DisplayID section, but ${why}. Sources may ignore its timings.`, { where })];
+  const length = b(2);
+  if (length > MAX_SECTION_LENGTH) return bad(`its length ${length} exceeds ${MAX_SECTION_LENGTH}`);
+  const end = 5 + length;
+  let i = 5;
+  while (end - i >= 3 && !(b(i) === 0 && b(i + 2) === 0)) {
+    const next = i + 3 + b(i + 2);
+    if (next > end) return bad(`data block 0x${hex(b(i))} at byte ${i} runs past the end of the section`);
+    i = next;
+  }
+  if (!isAllZero(slice(block, i, end))) return bad("the filler after its data blocks is not zero");
+  const sum = slice(block, 1, end + 1).reduce((a, v) => a + v, 0) & 0xff;
+  if (sum !== 0) return bad(`its section checksum (byte ${end}) is 0x${hex(b(end))}; it should be 0x${hex((b(end) - sum) & 0xff)}`);
+  if (!isAllZero(slice(block, end + 1, 127))) return bad("the padding after the section is not zero");
   return [];
 }
 
@@ -209,6 +240,10 @@ function listModes(edid: Edid): Mode[] {
     const i = describeDtd(d);
     modes.push({ label: `${i.hActive}x${i.vActive}`, refreshHz: i.refreshHz, hKHz: i.pixelClockKHz / i.hTotal, clockKHz: i.pixelClockKHz, only420: false });
   }
+  for (const t of displayIdTimings(edid)) {
+    const i = describeDisplayIdTiming(t);
+    modes.push({ label: `${i.hActive}x${i.vActive}`, refreshHz: i.refreshHz, hKHz: i.pixelClockKHz / i.hTotal, clockKHz: i.pixelClockKHz, only420: false });
+  }
   for (const { cta } of ctaBlocks(edid)) {
     for (const b of cta.dataBlocks) {
       if (b.kind !== "video" && b.kind !== "ycbcr420Video") continue;
@@ -224,7 +259,40 @@ function listModes(edid: Edid): Mode[] {
 /** Tiers 1 (model level), 2 and 3 on a model. */
 export function validateEdid(edid: Edid, options: ValidationOptions = {}): Issue[] {
   const link = options.link ?? "hdmi2.0";
-  return [...descriptorRules(edid), ...baseRules(edid), ...rangeRules(edid), ...ctaRules(edid), ...hdmiRules(edid), ...linkRules(edid, link)];
+  return [...blockMapRules(edid), ...descriptorRules(edid), ...baseRules(edid), ...rangeRules(edid), ...ctaRules(edid), ...hdmiRules(edid), ...linkRules(edid, link)];
+}
+
+/**
+ * EDID 1.3 reaches past block 1 only through a block map in block 1 or an
+ * HDMI Forum EEODB (edid-decode check_base_block()); sources without either
+ * may read two blocks only.
+ */
+function blockMapRules(edid: Edid): Issue[] {
+  if (edid.base.version !== 1 || edid.base.revision !== 3 || edid.extensions.length < 2) return [];
+  const first = edid.extensions[0];
+  if (first?.kind === "raw" && first.bytes[0] === 0xf0) return [];
+  if (first?.kind === "cta" && first.dataBlocks.some(isEeodb)) return [];
+  const count = edid.extensions.length;
+  return [
+    issue("structure.block-map", `This EDID 1.3 has ${count + 1} blocks, but block 1 has no block map or HDMI Forum EEODB to say so; sources may read only the first two.`, {
+      where: { type: "extensionCount" },
+      ...(first?.kind === "cta" && count <= 255
+        ? {
+            fix: {
+              label: "Add an HDMI Forum EEODB to block 1",
+              apply: (e: Edid) => ({
+                ...e,
+                extensions: e.extensions.map((x, i) => (i === 0 && x.kind === "cta" ? { ...x, dataBlocks: [{ kind: "raw", bytes: [(7 << 5) | 2, EXT_HF_EEODB, count] } as const, ...x.dataBlocks] } : x)),
+              }),
+            },
+          }
+        : {}),
+    }),
+  ];
+}
+
+function isEeodb(b: DataBlock): boolean {
+  return b.kind === "raw" && b.bytes[0] !== undefined && b.bytes[0] >> 5 === 7 && b.bytes[1] === EXT_HF_EEODB;
 }
 
 function descriptorRules(edid: Edid): Issue[] {
@@ -394,7 +462,7 @@ function rangeRules(edid: Edid): Issue[] {
 
   // Thresholds follow edid-decode check_base_block(): half a hertz or kilohertz of rounding, and any clock above the limit.
   // 4:2:0-only modes count at half their line rate and clock, as edid-decode print_timings() does.
-  // Not counted: DisplayID timings and anything in blocks kept raw.
+  // Not counted: anything in blocks kept raw, and DisplayID timings other than Type I.
   const outside = listModes(edid)
     .map((m) => (m.only420 ? { ...m, hKHz: m.hKHz / 2, clockKHz: m.clockKHz / 2 } : m))
     .filter(

@@ -22,6 +22,12 @@ const timing = (w: number, h: number, hz: string, formula: "exact" | "cvt-rb" = 
   return r.dtd;
 };
 
+const displayId = (w: number, h: number, hz: string, formula: "exact" | "cvt-rb2" = "exact") => {
+  const r = buildTiming({ hActive: w, vActive: h, refresh: hz, formula });
+  if (!r.displayId) throw new Error(r.displayIdProblems.join("; "));
+  return r.displayId;
+};
+
 const base: Omit<BuildIntent, "timing"> = {
   name: "LED wall",
   manufacturerId: "VYV",
@@ -53,6 +59,16 @@ export const GOLDEN: readonly Golden[] = [
   { name: "1080p59.94 CVT-RB, 4:2:2 allowed", bytes: () => serializeEdid(buildEdid({ ...base, formats: ["rgb", "ycbcr422"], timing: timing(1920, 1080, "59.94", "cvt-rb") })), expectFailures: [] },
   { name: "1080p60 8-bit, HDMI 1.4", bytes: () => serializeEdid(buildEdid({ ...base, link: "hdmi1.4", depths: [8], timing: timing(1920, 1080, "60") })), expectFailures: [] },
   { name: "1920x1200 60 Hz, DVI", bytes: () => serializeEdid(buildEdid({ ...base, link: "dvi", depths: [8], timing: timing(1920, 1200, "60") })), expectFailures: [] },
+  {
+    name: "5760x1080 60 Hz 10-bit in DisplayID, 1080p60 fallback, HDMI 2.0",
+    bytes: () => serializeEdid(buildEdid({ ...base, timing: timing(1920, 1080, "60"), displayIdTimings: [displayId(5760, 1080, "60")] })),
+    expectFailures: [],
+  },
+  {
+    name: "7680x1080 50 Hz in DisplayID, DVI",
+    bytes: () => serializeEdid(buildEdid({ ...base, link: "dvi", depths: [8], timing: timing(1920, 1080, "50"), displayIdTimings: [displayId(7680, 1080, "50", "cvt-rb2")] })),
+    expectFailures: [],
+  },
   {
     name: "4K50 10-bit, single mode (no 640x480)",
     bytes: () => serializeEdid(buildEdid({ ...base, include640x480: false, timing: timing(3840, 2160, "50") })),

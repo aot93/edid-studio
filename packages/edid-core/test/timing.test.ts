@@ -52,3 +52,39 @@ describe("exact solver", () => {
     expect(r.notes.join(" ")).toMatch(/HDMI-safe/);
   });
 });
+
+describe("rasters wider or taller than a DTD holds", () => {
+  it("5760x1080 at 60 Hz: no DTD (horizontal active over 4095), but a DisplayID Type I timing", () => {
+    const r = buildTiming({ hActive: 5760, vActive: 1080, refresh: "60", formula: "exact" });
+    expect(r.dtd).toBeUndefined();
+    expect(r.dtdProblems).toEqual(["horizontal active 5760 exceeds 4095"]);
+    expect(r.displayIdProblems).toEqual([]);
+    expect(r.displayId).toMatchObject({ hActive: 5760, vActive: 1080, pixelClock10kHz: r.timing.pixelClock10kHz, hBlank: r.timing.hTotal - 5760 });
+    expect(r.exact).toBe(true);
+    expect(r.notes.join(" ")).toMatch(/DisplayID/);
+  });
+
+  it("a timing that fits a DTD also has its DisplayID form", () => {
+    const r = buildTiming({ hActive: 3840, vActive: 2160, refresh: "50", formula: "exact" });
+    expect(r.dtd).toBeDefined();
+    expect(r.displayId).toMatchObject({ hActive: 3840, vActive: 2160 });
+  });
+
+  it("clocks above 655.35 MHz fit DisplayID's 24-bit clock", () => {
+    const r = buildTiming({ hActive: 7680, vActive: 2160, refresh: "60", formula: "cvt-rb2" });
+    expect(r.dtdProblems.join(" ")).toMatch(/pixel clock .* exceeds 655.35 MHz/);
+    expect(r.displayId).toBeDefined();
+  });
+
+  it("accepts any raster DisplayID can hold, up to 65536, and refuses beyond", () => {
+    expect(buildTiming({ hActive: 65536, vActive: 1080, refresh: "30", formula: "cvt-rb2" }).displayId).toBeDefined();
+    expect(() => buildTiming({ hActive: 65537, vActive: 1080, refresh: "30", formula: "cvt-rb2" })).toThrow(/1 to 65536/);
+  });
+
+  it("a manual zero front porch fits a DTD but not DisplayID, which stores it minus one", () => {
+    const r = buildTiming({ hActive: 1920, vActive: 1080, refresh: "60", formula: "manual", porches: { hFrontPorch: 0, hSync: 44, hBackPorch: 236, vFrontPorch: 4, vSync: 5, vBackPorch: 36 } });
+    expect(r.dtd).toBeDefined();
+    expect(r.displayId).toBeUndefined();
+    expect(r.displayIdProblems).toEqual(["horizontal front porch 0 is below 1"]);
+  });
+});

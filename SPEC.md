@@ -99,7 +99,8 @@ The tree holds a base block (identity, version, input definition, chromaticity, 
 | Video capability, 4:2:0 capability map, 4:2:0 video data block | MVP | SVD indices re-mapped on edit |
 | Audio, speaker allocation, colorimetry, HDR static metadata | v1 | Parsed in MVP, editable in v1 |
 | HDMI Forum SCDB (FRL, DSC) | v1.1 | Needed for HDMI 2.1 targets |
-| DisplayID Type I and VII timings, CTA video timing, video format preference | v1.1 | For timings a DTD cannot hold |
+| DisplayID Type I timings, in a DisplayID 1.2 extension block | Done early (2026-10-21) | For timings a DTD cannot hold; see "Rasters a DTD cannot hold" below |
+| DisplayID Type VII timings, CTA video timing, video format preference | v1.1 | Type VII and other DisplayID data blocks are preserved raw |
 | Unknown blocks | MVP | Preserved byte for byte |
 
 **Import:** hex text in any common layout (spaces, commas, `0x` prefixes, offset dumps), binary, C array, base64, Windows `.reg` override, and live read (section 13).
@@ -136,8 +137,14 @@ This is why the standard 4K50 timing (VIC 96, front porch 1056) cannot be a DTD.
 - Warn when active width is not a multiple of 8. Error when width or height is odd and a subsampled format (4:2:2, 4:2:0) is selected.
 - Default polarity by formula: CVT normal H- V+, CVT-RB H+ V-, CTA per its VIC table.
 - For HDMI targets, warn when horizontal blanking is under 160 pixels. This is a heuristic, configurable, not a spec constant; variants with 80-pixel blanking are not generally HDMI-safe.
-- If the clock exceeds 655.35 MHz, propose a reduced-blanking formula, a DisplayID timing (v1.1), or a lower refresh or size.
+- If the clock exceeds 655.35 MHz, propose a reduced-blanking formula, a DisplayID timing, or a lower refresh or size.
 - Never invent image size. Leave 0 unless the user gives millimetres or a diagonal.
+
+**Rasters a DTD cannot hold** (owner decision 2026-10-21, for LED walls such as 5760x1080). The engine also encodes every timing as a DisplayID Type I timing: 16-bit active and blanking (up to 65536), 15-bit porches, a 24-bit clock in 10 kHz units, each stored minus one (edid-decode `parse_displayid_type_1_7_timing()`, Linux `drm_mode_displayid_detailed()`). When a timing does not fit a DTD but fits Type I, the builder puts it in a DisplayID 1.2 extension block as the preferred timing and keeps a 1920x1080 DTD at the same refresh in the base block for sources that ignore DisplayID. Choices, each TODO(verify) on NVIDIA hardware:
+
+- Product type 5 (repeater/translator). edid-decode fails type 0 in the first section and requires a Display Parameters block for display types, whose one-byte aspect ratio cannot hold wide rasters.
+- HDMI EDIDs stay 1.3, so a third block needs a block map or an HDMI Forum EEODB (edid-decode `check_base_block()`). The builder uses the EEODB (owner decision 2026-10-21): byte 126 says 1, so a source that ignores the EEODB still sees a sound base + CTA EDID with the fallback timing.
+- Linux marks both the fallback DTD and the DisplayID timing preferred and sorts the larger first, so it picks the DisplayID timing.
 
 **Reference data.** Ship the full CTA-861 VIC and VESA DMT tables as data files, and generate known-answer tests from the `cvt` and `gtf` utilities and `edid-decode`.
 
@@ -203,7 +210,7 @@ Every rule has a stable ID, a severity, a plain-language explanation and, where 
 
 **Independent checks**
 
-- `edid-decode --check` runs in CI on every golden output and is available as a "second opinion" in the UI and CLI. Any disagreement is triaged as a bug, never suppressed. CI builds it from a pinned commit (`scripts/build-edid-decode.sh`). Golden outputs that intentionally differ (single-mode EDIDs without 640x480, the hardware-verified Tessera output) pin their exact expected failures. A differential test checks each rule that mirrors an edid-decode check against it on all 129 corpus and fixture EDIDs; the four known differences are pinned with reasons (DisplayID and old CTA blocks the model keeps raw). The in-browser second opinion (edid-decode's WebAssembly build) is not done yet.
+- `edid-decode --check` runs in CI on every golden output and is available as a "second opinion" in the UI and CLI. Any disagreement is triaged as a bug, never suppressed. CI builds it from a pinned commit (`scripts/build-edid-decode.sh`). Golden outputs that intentionally differ (single-mode EDIDs without 640x480, the hardware-verified Tessera output) pin their exact expected failures. A differential test checks each rule that mirrors an edid-decode check against it on all 129 corpus and fixture EDIDs; the two known differences are pinned with reasons (corrupted and old CTA blocks the model keeps raw). The in-browser second opinion (edid-decode's WebAssembly build) is not done yet.
 - Round-trip: parse, model, serialize gives identical bytes for every fixture, unknown blocks included.
 - Property tests: random valid timings build, parse and compare equal; every DTD field is tested at its limit and limit + 1; checksums always sum to zero; length is always a multiple of 128.
 - Known-answer tests: all CTA VICs, DMT modes, CVT and GTF against reference tools, link budgets against the hand-checked cases in section 7.
@@ -366,7 +373,7 @@ The MVP is accepted when these nine tests pass in CI.
 
 ## Milestones and Claude Code working agreement
 
-Build in this order, one milestone per pull request; a milestone is done only when its test gate passes. Owner decision (2026-10-14): after M0, start the web UI before M1 to M3. Its first slice (open, editor, export, strip-down edits) uses only what the core already has; screens that need validation, the timing engine or the link analyzer wait for those milestones.
+Build in this order, one milestone per pull request; a milestone is done only when its test gate passes. Owner decision (2026-10-14): after M0, start the web UI before M1 to M3. Its first slice (open, editor, export, strip-down edits) uses only what the core already has; screens that need validation, the timing engine or the link analyzer wait for those milestones. Owner decision (2026-10-21): DisplayID Type I timings come forward from M6, in their own pull request on top of M1, because LED walls need rasters wider than 4095.
 
 | Milestone | Scope | Done when |
 | --- | --- | --- |

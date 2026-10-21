@@ -16,6 +16,7 @@ import {
   parseEdid,
   printable,
   serializeEdid,
+  validateBytes,
 } from "../src/index.ts";
 import type { InputRejection } from "../src/index.ts";
 import { CORPUS_DIR } from "./corpus.ts";
@@ -197,6 +198,26 @@ describe("fuzz", () => {
         bytes[at] = Math.floor(r() * 256);
       }
       importSafely(bytes);
+    }
+  });
+
+  it("DisplayID sections with corrupted bytes, through import and validation", () => {
+    const r = rng(4);
+    const seeds = ["acer-xv273k-corrected_difdb", "dell-up2715k-dp-switchresx", "lg-34wk95uw-dp", "apple-xdr-6k"].map(
+      (f) => new Uint8Array(readFileSync(join(CORPUS_DIR, "edid-decode", f))),
+    );
+    for (let n = 0; n < 3000; n++) {
+      const seed = seeds[n % seeds.length] ?? reference;
+      const bytes = Uint8Array.from(seed);
+      const blocks = [...Array(bytes.length / 128).keys()].filter((b) => bytes[b * 128] === 0x70);
+      const flips = 1 + Math.floor(r() * 6);
+      for (let k = 0; k < flips; k++) {
+        // Section header, data block lengths and timings: anything but the tag.
+        const block = blocks[Math.floor(r() * blocks.length)] ?? 1;
+        bytes[block * 128 + 1 + Math.floor(r() * 127)] = Math.floor(r() * 256);
+      }
+      importSafely(bytes);
+      expect(() => validateBytes(bytes)).not.toThrow();
     }
   });
 });

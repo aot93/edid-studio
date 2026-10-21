@@ -4,6 +4,7 @@
 import { BLOCK_SIZE } from "./bytes.ts";
 import { serializeDataBlock } from "./cta.ts";
 import { DESCRIPTOR_SIZE } from "./descriptors.ts";
+import { serializeDisplayIdDataBlock } from "./displayid.ts";
 import type { Edid } from "./model.ts";
 
 export type NodeRef =
@@ -21,6 +22,10 @@ export type NodeRef =
   | { readonly type: "ctaHeader"; readonly extension: number }
   | { readonly type: "dataBlock"; readonly extension: number; readonly index: number }
   | { readonly type: "ctaDescriptor"; readonly extension: number; readonly index: number }
+  | { readonly type: "displayIdHeader"; readonly extension: number }
+  | { readonly type: "displayIdBlock"; readonly extension: number; readonly index: number }
+  | { readonly type: "displayIdFiller"; readonly extension: number }
+  | { readonly type: "displayIdChecksum"; readonly extension: number }
   | { readonly type: "padding"; readonly block: number }
   | { readonly type: "rawExtension"; readonly extension: number };
 
@@ -68,6 +73,22 @@ export function edidLayout(edid: Edid): LayoutNode[] {
         node({ type: "rawExtension", extension: e }, at, at + BLOCK_SIZE - 1),
         checksum,
       ]);
+    }
+    if (ext.kind === "displayid") {
+      // Tag and section header (bytes 0-4), data blocks, filler, section checksum, padding.
+      const children: LayoutNode[] = [node({ type: "displayIdHeader", extension: e }, at, at + 5)];
+      let offset = at + 5;
+      ext.dataBlocks.forEach((b, i) => {
+        const length = serializeDisplayIdDataBlock(b).length;
+        children.push(node({ type: "displayIdBlock", extension: e, index: i }, offset, offset + length));
+        offset += length;
+      });
+      if (ext.filler > 0) children.push(node({ type: "displayIdFiller", extension: e }, offset, offset + ext.filler));
+      offset += ext.filler;
+      children.push(node({ type: "displayIdChecksum", extension: e }, offset, offset + 1));
+      if (offset + 1 < at + BLOCK_SIZE - 1) children.push(node({ type: "padding", block }, offset + 1, at + BLOCK_SIZE - 1));
+      children.push(checksum);
+      return node({ type: "block", block }, at, at + BLOCK_SIZE, children);
     }
     const children: LayoutNode[] = [node({ type: "ctaHeader", extension: e }, at, at + 4)];
     let offset = at + 4;

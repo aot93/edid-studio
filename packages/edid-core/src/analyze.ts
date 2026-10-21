@@ -2,6 +2,7 @@
 // report. A first step towards the tier 3 rules of milestone M1.
 
 import { describeDtd, lookupVic, modeLabel } from "./describe.ts";
+import { describeDisplayIdTiming, displayIdTimings } from "./displayid.ts";
 import { linkReport } from "./link.ts";
 import type { AdvertisedColour, ColourFormat, Depth, Link, ModeReport } from "./link.ts";
 import type { Edid } from "./model.ts";
@@ -32,7 +33,7 @@ export function advertisedColour(edid: Edid): AdvertisedColour {
   return { formats, depths: [...new Set(depths)], depths420: [...new Set(depths420)] };
 }
 
-/** Link report for every detailed timing and listed VIC. */
+/** Link report for every detailed timing (DTD or DisplayID Type I) and listed VIC. */
 export function analyzeLink(edid: Edid, link: Link): ModeReport[] {
   const modes: { mode: string; pixelClockKHz: number; supports420: boolean }[] = [];
   const dtds = [...edid.base.descriptors, ...edid.extensions.flatMap((e) => (e.kind === "cta" ? e.descriptors : []))];
@@ -40,6 +41,10 @@ export function analyzeLink(edid: Edid, link: Link): ModeReport[] {
     if (d.kind !== "dtd") continue;
     const info = describeDtd(d);
     modes.push({ mode: `Timing ${modeLabel(info)}`, pixelClockKHz: info.pixelClockKHz, supports420: false });
+  }
+  for (const t of displayIdTimings(edid)) {
+    const info = describeDisplayIdTiming(t);
+    modes.push({ mode: `DisplayID timing ${modeLabel(info)}`, pixelClockKHz: info.pixelClockKHz, supports420: false });
   }
 
   // 4:2:0 support per SVD: capability map bits index SVDs across all video blocks.

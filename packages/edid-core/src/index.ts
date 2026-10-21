@@ -27,9 +27,20 @@ export {
 export type { ExportFormat, ImportedEdid } from "./io.ts";
 export type * from "./model.ts";
 export { describeDtd, lookupVic, modeLabel } from "./describe.ts";
+export {
+  describeDisplayIdTiming,
+  DISPLAYID_EXTENSION_TAG,
+  displayIdSection,
+  displayIdTimingProblems,
+  displayIdTimings,
+  parseDisplayIdExtension,
+  preferredDisplayIdTiming,
+  serializeDisplayIdExtension,
+} from "./displayid.ts";
 export type { DtdInfo, VicInfo, VideoMode } from "./describe.ts";
 export {
   addDetailedTiming,
+  addDisplayIdTiming,
   autoRangeLimits,
   keepOnlyModes,
   makePreferred,

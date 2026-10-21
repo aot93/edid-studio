@@ -136,7 +136,7 @@ export interface RawDescriptor {
   readonly bytes: readonly number[];
 }
 
-export type Extension = CtaExtension | RawExtension;
+export type Extension = CtaExtension | DisplayIdExtension | RawExtension;
 
 /** Any extension block the model does not type, bytes 0 to 126; the checksum is recomputed. */
 export interface RawExtension {
@@ -267,6 +267,65 @@ export interface HdmiForumVsdb {
 
 /** Any other data block, header byte included, kept byte for byte. */
 export interface RawDataBlock {
+  readonly kind: "raw";
+  readonly bytes: readonly number[];
+}
+
+/**
+ * DisplayID section in an EDID extension block, tag 0x70 (DisplayID 1.3
+ * section 2; edid-decode parse_displayid_block(), Linux drm_displayid.c).
+ * Byte 0 is the tag, bytes 1-4 the section header, data blocks from byte 5,
+ * then the section checksum and zero padding to byte 126.
+ */
+export interface DisplayIdExtension {
+  readonly kind: "displayid";
+  /** Byte 1: structure version, 0x12 for DisplayID 1.2. */
+  readonly version: number;
+  /** Byte 3: product type (1.x) or primary use case (2.x); 0 in an extension section. */
+  readonly productType: number;
+  /** Byte 4: DisplayID extension sections that follow. */
+  readonly extensionCount: number;
+  readonly dataBlocks: readonly DisplayIdDataBlock[];
+  /** Zero bytes inside the section after the data blocks; many real sections fill all 121. */
+  readonly filler: number;
+}
+
+export type DisplayIdDataBlock = DisplayIdType1TimingBlock | RawDisplayIdDataBlock;
+
+/** Video Timing Modes Type 1, Detailed Timings Data Block, tag 0x03: 20 bytes per timing. */
+export interface DisplayIdType1TimingBlock {
+  readonly kind: "type1Timings";
+  /** Byte 1 of the block header: revision in bits 2-0, the rest reserved. */
+  readonly revision: number;
+  readonly timings: readonly DisplayIdTiming[];
+}
+
+/**
+ * One Type I detailed timing. Values are the real counts; each is stored
+ * minus one (edid-decode parse_displayid_type_1_7_timing(), drm
+ * drm_mode_displayid_detailed()). Blanking is the whole blanking interval.
+ */
+export interface DisplayIdTiming {
+  /** 24 bits stored, units of 10 kHz, so 1 to 16777216. */
+  readonly pixelClock10kHz: number;
+  /** Byte 3: preferred (bit 7), 3D stereo (6-5), interlaced (4), aspect ratio code (3-0). */
+  readonly flags: number;
+  /** 16 bits stored: 1 to 65536. */
+  readonly hActive: number;
+  readonly hBlank: number;
+  /** 15 bits stored: 1 to 32768. */
+  readonly hFrontPorch: number;
+  readonly hSync: number;
+  readonly hSyncPositive: boolean;
+  readonly vActive: number;
+  readonly vBlank: number;
+  readonly vFrontPorch: number;
+  readonly vSync: number;
+  readonly vSyncPositive: boolean;
+}
+
+/** Any other DisplayID data block, 3-byte header included, kept byte for byte. */
+export interface RawDisplayIdDataBlock {
   readonly kind: "raw";
   readonly bytes: readonly number[];
 }

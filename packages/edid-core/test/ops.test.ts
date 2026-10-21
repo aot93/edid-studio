@@ -3,6 +3,10 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   addDetailedTiming,
+  addDisplayIdTiming,
+  buildTiming,
+  displayIdTimings,
+  validateEdid,
   EdidEncodeError,
   keepOnlyModes,
   makePreferred,
@@ -164,5 +168,45 @@ describe("timing operations", () => {
     expect(cta(out).dataBlocks.find((b) => b.kind === "hdmiForumVsdb")).toMatchObject({ dc30bit420: false, dc36bit420: false });
     expect(cta(out).dataBlocks.find((b) => b.kind === "hdmiVsdb")).toMatchObject({ capabilities: { dc30bit: true, dc36bit: false, dcY444: true } });
     roundTrips(out);
+  });
+});
+
+describe("addDisplayIdTiming", () => {
+  const wide = buildTiming({ hActive: 5760, vActive: 1080, refresh: "60", formula: "exact" }).displayId;
+  if (!wide) throw new Error("no DisplayID timing");
+
+  it("adds a DisplayID block after the CTA block of an HDMI EDID 1.3, with an EEODB so sources read it", () => {
+    const e = addDisplayIdTiming(load("dell-p2415q-hdmi2.0"), wide);
+    expect(e.extensions.map((x) => x.kind)).toEqual(["cta", "displayid"]);
+    expect(cta(e).dataBlocks[0]).toEqual({ kind: "raw", bytes: [0xe2, 0x78, 2] });
+    expect(displayIdTimings(e).map((t) => [t.hActive, t.flags & 0x80])).toEqual([[5760, 0x80]]);
+    expect(validateEdid(e).filter((i) => i.rule === "structure.block-map")).toEqual([]);
+    roundTrips(e);
+    expect(serializeEdid(e)[126]).toBe(1);
+  });
+
+  it("appends to an existing typed section and makes the new timing the only preferred one", () => {
+    const once = addDisplayIdTiming(load("dell-p2415q-hdmi2.0"), wide);
+    const twice = addDisplayIdTiming(once, { ...wide, hActive: 7680 });
+    expect(twice.extensions.length).toBe(2);
+    expect(displayIdTimings(twice).map((t) => [t.hActive, t.flags & 0x80])).toEqual([
+      [5760, 0],
+      [7680, 0x80],
+    ]);
+    roundTrips(twice);
+  });
+
+  it("updates an EEODB count already there instead of adding a second one", () => {
+    const e = addDisplayIdTiming(load("dell-p2415q-hdmi2.0"), wide);
+    const more = { ...e, extensions: [...e.extensions, { kind: "raw" as const, bytes: [0x10, ...new Array<number>(126).fill(0)] }] };
+    const again = addDisplayIdTiming(more, wide);
+    expect(cta(again).dataBlocks.filter((b) => b.kind === "raw" && b.bytes[1] === 0x78)).toEqual([{ kind: "raw", bytes: [0xe2, 0x78, 3] }]);
+  });
+
+  it("a single-block EDID gets a DisplayID block 1 and needs no EEODB", () => {
+    const base = { ...load("dell-p2415q-hdmi2.0"), extensions: [] };
+    const e = addDisplayIdTiming(base, wide);
+    expect(e.extensions.map((x) => x.kind)).toEqual(["displayid"]);
+    roundTrips(e);
   });
 });
