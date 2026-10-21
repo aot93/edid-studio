@@ -265,9 +265,18 @@ export interface HdmiVsdbCapabilities {
   readonly dviDual: boolean;
 }
 
-/** HDMI Forum VSDB, OUI C4-5D-D8 (stored D8 5D C4). edid-decode cta_hf_scdb(). */
+/**
+ * HDMI Forum VSDB, OUI C4-5D-D8 (stored D8 5D C4), or the same fields as an
+ * HDMI Forum SCDB, extended tag 0x79 (HDMI 2.1 section 10.3.2; edid-decode
+ * cta_hf_scdb() and case 0x779). Payload bytes, counting from the version:
+ * 0 version, 1 max TMDS, 2 SCDC and 3D flags, 3 max FRL rate and 4:2:0 deep
+ * colour, 4 HDMI 2.1 features, 5-6 VRR range, 7-9 DSC. A group is typed only
+ * when the block holds all of its bytes; anything after is kept in `tail`.
+ */
 export interface HdmiForumVsdb {
   readonly kind: "hdmiForumVsdb";
+  /** Present for the SCDB form: its two reserved bytes, as stored. Absent for the VSDB. */
+  readonly scdb?: readonly [number, number];
   readonly version: number;
   /** Units of 5 MHz; 0 means no rate above 340 MHz. */
   readonly maxTmdsCharRate5MHz: number;
@@ -279,14 +288,57 @@ export interface HdmiForumVsdb {
   readonly independentView3d: boolean;
   readonly dualView3d: boolean;
   readonly osdDisparity3d: boolean;
-  /** 4 bits. */
+  /** 4 bits: 0 none, 1 3x3, 2 6x3, 3 6x4, 4 8x4, 5 10x4, 6 12x4 (lanes x Gbps). See FRL_RATES. */
   readonly maxFrlRate: number;
   readonly uhdVic: boolean;
   readonly dc48bit420: boolean;
   readonly dc36bit420: boolean;
   readonly dc30bit420: boolean;
-  /** Payload bytes after the fixed fields (VRR, DSC and so on), kept raw. */
+  /** Byte 4. Absent when the block ends before it. */
+  readonly features21?: HdmiForumFeatures;
+  /** Bytes 5-6. Absent when the block ends before them. */
+  readonly vrr?: { readonly min: number; readonly max: number };
+  /** Bytes 7-9. Absent when the block ends before them. */
+  readonly dsc?: HdmiForumDsc;
+  /** Payload bytes after the typed groups, kept raw. */
   readonly tail: readonly number[];
+}
+
+/** HDMI Forum byte 4, bit 7 first. */
+export interface HdmiForumFeatures {
+  readonly fapaEndExtended: boolean;
+  readonly qms: boolean;
+  readonly mDelta: boolean;
+  /** CinemaVRR, deprecated: edid-decode warns when set. */
+  readonly cinemaVrr: boolean;
+  readonly negativeMvrr: boolean;
+  /** Fast Vactive. */
+  readonly fva: boolean;
+  /** Auto Low-Latency Mode. */
+  readonly allm: boolean;
+  readonly fapaStartLocation: boolean;
+}
+
+/** HDMI Forum bytes 7-9: VESA DSC 1.2a support. */
+export interface HdmiForumDsc {
+  readonly dsc12a: boolean;
+  /** Compressed video transport for 4:2:0. */
+  readonly native420: boolean;
+  readonly qmsTfrMax: boolean;
+  readonly qmsTfrMin: boolean;
+  /** Any valid 1/16th-bit bpp. */
+  readonly allBpp: boolean;
+  readonly bpc16: boolean;
+  readonly bpc12: boolean;
+  readonly bpc10: boolean;
+  /** 4 bits: 0 none, 1-7 slice and clock limits (edid-decode dsc_max_slices). */
+  readonly maxSlices: number;
+  /** 4 bits, coded as maxFrlRate. */
+  readonly maxFrlRate: number;
+  /** 6 bits: total bytes in a line of chunks is 1024 x (1 + this). */
+  readonly totalChunkKBytes: number;
+  /** Byte 9 bits 7-6, reserved. */
+  readonly reserved: number;
 }
 
 /** Any other data block, header byte included, kept byte for byte. */

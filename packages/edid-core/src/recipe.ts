@@ -63,7 +63,7 @@ export type RecipeOp =
       readonly week?: number;
       readonly year?: number;
     }
-  | { readonly op: "setHdmiCaps"; readonly maxTmdsMHz?: number; readonly scdc?: boolean; readonly physicalAddress?: string }
+  | { readonly op: "setHdmiCaps"; readonly maxTmdsMHz?: number; readonly scdc?: boolean; readonly physicalAddress?: string; readonly maxFrlRate?: number }
   | { readonly op: "setAudio"; readonly channels: number; readonly ratesKHz: readonly number[]; readonly depths: readonly number[] }
   | { readonly op: "stripAudio" }
   | { readonly op: "setSerial"; readonly serial: number };
@@ -124,7 +124,7 @@ const OPS: Record<RecipeOp["op"], Fields> = {
     week: { type: "number" },
     year: { type: "number" },
   },
-  setHdmiCaps: { maxTmdsMHz: { type: "number" }, scdc: { type: "boolean" }, physicalAddress: { type: "string" } },
+  setHdmiCaps: { maxTmdsMHz: { type: "number" }, scdc: { type: "boolean" }, physicalAddress: { type: "string" }, maxFrlRate: { type: "number" } },
   setAudio: { channels: { type: "number", required: true }, ratesKHz: { type: "numbers", required: true }, depths: { type: "numbers", required: true } },
   stripAudio: {},
   setSerial: { serial: { type: "number", required: true } },

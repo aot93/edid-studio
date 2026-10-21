@@ -178,6 +178,8 @@ Worked example from the case, HDMI 2.0:
 | 4K50, CEA | 594 | 4:2:2 10-bit | 594 | Yes |
 | 4K50, CEA | 594 | 4:2:0 10-bit | 371.25 | Yes |
 
+**HDMI 2.1 (M6, 2026-10-21).** Up to 600 MHz TMDS a mode is carried as on HDMI 2.0. Above that it needs FRL: the video bit rate (pixel clock x bits per pixel: 3 x depth for RGB and 4:4:4, the 24-bit 4:2:2 container, 1.5 x depth for 4:2:0) against lanes x Gbps x 16/18. The builder declares the lowest FRL rate that carries the fastest mode at the deepest depth, with 600 MHz TMDS and SCDC, as edid-decode requires. TODO(verify): the HDMI 2.1 FRL capacity computation also budgets RS FEC, map and audio overhead, so this is an upper bound and is labelled approximate wherever it is shown. The HDMI Forum VSDB and SCDB are typed in full: FRL, UHD VIC, 4:2:0 deep colour, the HDMI 2.1 feature flags (ALLM, QMS, FVA and so on), the VRR range and DSC.
+
 **Output.** A matrix of mode x format x depth with a verdict and the numbers behind it, for a link type the user selects in the project.
 
 **Likely driver choice.** A labelled heuristic, not a spec: prefer RGB, then 4:4:4, 4:2:2, 4:2:0, at the highest depth that fits both the EDID flags and the link. Observed Nvidia behaviour is recorded as notes, never as rules.

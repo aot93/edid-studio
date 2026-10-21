@@ -102,6 +102,13 @@ describe("setHdmiCaps", () => {
     roundTrips(e);
   });
 
+  it("sets the max FRL rate, adding an HDMI Forum VSDB if needed, and refuses unknown codes", () => {
+    const e = setHdmiCaps(built, { maxFrlRate: 3, maxTmdsMHz: 600 });
+    expect(cta(e).dataBlocks.find((b) => b.kind === "hdmiForumVsdb")).toMatchObject({ maxFrlRate: 3, maxTmdsCharRate5MHz: 120 });
+    expect(validateEdid(e).filter((i) => i.severity === "error")).toEqual([]);
+    expect(() => setHdmiCaps(built, { maxFrlRate: 7 })).toThrow(/FRL/);
+  });
+
   it("sets the physical address", () => {
     expect(cta(setHdmiCaps(built, { physicalAddress: "2.1.0.0" })).dataBlocks.find((b) => b.kind === "hdmiVsdb")).toMatchObject({ physicalAddress: 0x2100 });
     expect(() => setHdmiCaps(built, { physicalAddress: "16.0.0.0" })).toThrow(/physical address/);

@@ -16,10 +16,10 @@ import { describeDisplayIdTiming, displayIdTimings } from "./displayid.ts";
 import { EXT_HF_EEODB } from "./cta.ts";
 import { DISPLAYID_EXTENSION_TAG, MAX_SECTION_LENGTH } from "./displayid.ts";
 import { declaredExtensionCount, expectedEdidLength, parseEdid } from "./edid.ts";
-import { feasibility, LINKS, tmdsRateKHz } from "./link.ts";
+import { feasibility, FRL_RATES, LINKS, tmdsRateKHz } from "./link.ts";
 import type { Link } from "./link.ts";
 import type { NodeRef } from "./layout.ts";
-import type { CtaExtension, DataBlock, Descriptor, Edid, HdmiVsdb } from "./model.ts";
+import type { CtaExtension, DataBlock, Descriptor, Edid, HdmiForumVsdb, HdmiVsdb } from "./model.ts";
 import { autoRangeLimits, makePreferred, removeHdmiVideo, removeSvd, setCtaYcbcr, setHdmiDeepColour, setHf420DeepColour, setRangeLimits, setStandardTimings } from "./ops.ts";
 
 export type Severity = "error" | "warning" | "info";
@@ -81,6 +81,10 @@ export const RULES = {
   "hdmi.vsdb-tmds": { tier: 2, severity: "error", title: "HDMI VSDB max TMDS clock is at most 340 MHz" },
   "hdmi.max-tmds": { tier: 2, severity: "error", title: "Max TMDS covers the fastest mode" },
   "hdmi.vic-equivalents": { tier: 2, severity: "error", title: "HDMI VICs have their CTA-861 VICs in the video data block" },
+  "hdmi.forum-rate": { tier: 2, severity: "error", title: "HDMI Forum max TMDS is above 340 and at most 600 MHz" },
+  "hdmi.frl-tmds": { tier: 2, severity: "error", title: "FRL comes with a 600 MHz max TMDS (300 MHz for 3x3)" },
+  "hdmi.uhd-vic": { tier: 2, severity: "warning", title: "The UHD VIC bit matches the HDMI VICs listed" },
+  "hdmi.vrr-range": { tier: 2, severity: "error", title: "The HDMI 2.1 VRR range is valid" },
   "hdmi.forum-vsdb-needed": { tier: 2, severity: "error", title: "Modes above 340 MHz have an HDMI Forum VSDB with SCDC" },
   "color.y444-flag": { tier: 2, severity: "error", title: "DC_Y444 needs YCbCr 4:4:4 support" },
   "color.y444-depth": { tier: 2, severity: "warning", title: "DC_Y444 needs a deep colour depth" },
@@ -591,6 +595,44 @@ function ctaRules(edid: Edid): Issue[] {
   return out;
 }
 
+/** HDMI Forum VSDB / SCDB checks, as edid-decode cta_hf_scdb() makes them. */
+function forumRules(b: HdmiForumVsdb, where: NodeRef, listed: ReadonlySet<number>, hdmiVicList: readonly number[], hdmiVicToCta: readonly number[]): Issue[] {
+  const out: Issue[] = [];
+  const mapForum = (e: Edid, f: (x: HdmiForumVsdb) => HdmiForumVsdb): Edid => ({
+    ...e,
+    extensions: e.extensions.map((x) => (x.kind === "cta" ? { ...x, dataBlocks: x.dataBlocks.map((d) => (d.kind === "hdmiForumVsdb" ? f(d) : d)) } : x)),
+  });
+  const rate = b.maxTmdsCharRate5MHz * 5;
+  if (rate > 0 && (rate <= 340 || rate > 600)) {
+    out.push(issue("hdmi.forum-rate", `The HDMI Forum VSDB states ${rate} MHz; when set, it must be above 340 and at most 600 MHz.`, { where }));
+  }
+  if ((b.maxFrlRate === 1 && rate < 300) || (b.maxFrlRate >= 2 && rate < 600)) {
+    const need = b.maxFrlRate === 1 ? 300 : 600;
+    out.push(
+      issue("hdmi.frl-tmds", `FRL rate ${b.maxFrlRate} is declared, which needs a max TMDS rate of at least ${need} MHz; the block states ${rate} MHz.`, {
+        where,
+        fix: { label: `Set max TMDS to ${need} MHz`, apply: (e) => mapForum(e, (x) => ({ ...x, maxTmdsCharRate5MHz: need / 5 })) },
+      }),
+    );
+  }
+  // edid-decode: an HDMI VIC whose CTA equivalent is listed needs the UHD VIC bit, and the bit needs one.
+  const related = hdmiVicList.some((v) => listed.has(hdmiVicToCta[v - 1] ?? -1));
+  if (related !== b.uhdVic) {
+    out.push(
+      issue("hdmi.uhd-vic", related ? "HDMI VICs and their CTA-861 VICs are listed, but the HDMI Forum UHD VIC bit is 0. edid-decode fails this; the NVIDIA driver accepted it in the Tessera case." : "The HDMI Forum UHD VIC bit is 1, but no HDMI VIC with its CTA-861 VIC is listed.", {
+        where,
+        fix: { label: related ? "Set the UHD VIC bit" : "Clear the UHD VIC bit", apply: (e) => mapForum(e, (x) => ({ ...x, uhdVic: related })) },
+      }),
+    );
+  }
+  if (b.vrr) {
+    const { min, max } = b.vrr;
+    const problem = min > 48 ? `VRRmin ${min} Hz is above 48 Hz` : max !== 0 && min === 0 ? `VRRmax is ${max} Hz but VRRmin is 0` : max !== 0 && max < 100 ? `VRRmax ${max} Hz is below 100 Hz` : undefined;
+    if (problem) out.push(issue("hdmi.vrr-range", `${problem} (HDMI 2.1 VRR range; edid-decode cta_hf_scdb()).`, { where }));
+  }
+  return out;
+}
+
 /** Bytes an HDMI VSDB's flags byte promises after itself (HDMI 1.4b table 8-16; edid-decode cta_hdmi_block()). */
 function hdmiTailNeeds(tail: readonly number[]): number {
   const flags = tail[0];
@@ -622,11 +664,11 @@ function hdmiRules(edid: Edid): Issue[] {
   const out: Issue[] = [];
   const blocks = ctaBlocks(edid);
   let vsdb: { b: HdmiVsdb; extension: number; index: number } | undefined;
-  let forum: { scdc: boolean; rateKHz: number } | undefined;
+  let forum: { scdc: boolean; rateKHz: number; b: HdmiForumVsdb; where: NodeRef } | undefined;
   for (const { cta, extension } of blocks) {
     cta.dataBlocks.forEach((b, index) => {
       if (b.kind === "hdmiVsdb" && !vsdb) vsdb = { b, extension, index };
-      if (b.kind === "hdmiForumVsdb" && !forum) forum = { scdc: b.scdcPresent, rateKHz: b.maxTmdsCharRate5MHz * 5000 };
+      if (b.kind === "hdmiForumVsdb" && !forum) forum = { scdc: b.scdcPresent, rateKHz: b.maxTmdsCharRate5MHz * 5000, b, where: { type: "dataBlock", extension, index } };
     });
   }
   if (!vsdb) return out;
@@ -667,9 +709,16 @@ function hdmiRules(edid: Edid): Issue[] {
   const fastest420 = modes.filter((m) => m.only420).reduce((a, m) => Math.max(a, m.clockKHz / 2), 0);
   const needed = Math.max(fastest, fastest420);
   const stated = forum && forum.rateKHz > 0 ? forum.rateKHz : vsdbKHz;
-  if (stated > 0 && needed > stated) {
-    out.push(issue("hdmi.max-tmds", `The fastest mode needs ${(needed / 1000).toFixed(2)} MHz at 8-bit, above the stated maximum of ${stated / 1000} MHz.`, { where }));
+  // Above the TMDS maximum, an HDMI 2.1 sink can still take the mode over FRL (8-bit RGB, 24 bits a pixel).
+  const frl = forum && forum.b.maxFrlRate > 0 ? FRL_RATES.find((r) => r.code === forum?.b.maxFrlRate) : undefined;
+  const overFrl = frl !== undefined && needed * 24 <= frl.payloadKbps;
+  if (stated > 0 && needed > stated && !overFrl) {
+    out.push(
+      issue("hdmi.max-tmds", `The fastest mode needs ${(needed / 1000).toFixed(2)} MHz at 8-bit, above the stated maximum of ${stated / 1000} MHz${frl ? ` and FRL ${frl.gbpsPerLane} Gbps x ${frl.lanes}` : ""}.`, { where }),
+    );
   }
+
+  if (forum) out.push(...forumRules(forum.b, forum.where, listed, hdmiVics(vsdb.b.tail), HDMI_VIC_TO_CTA));
   if (fastest > 340_000 && !(forum && forum.scdc)) {
     out.push(issue("hdmi.forum-vsdb-needed", `A mode needs ${(fastest / 1000).toFixed(2)} MHz, above 340 MHz, which needs an HDMI Forum VSDB with SCDC present.`, { where }));
   }

@@ -15,7 +15,7 @@ import {
   validateBytes,
   validateEdid,
 } from "../src/index.ts";
-import type { CtaExtension, DataBlock, Descriptor, Edid, HdmiVsdb, RuleId } from "../src/index.ts";
+import type { CtaExtension, DataBlock, Descriptor, Edid, HdmiForumVsdb, HdmiVsdb, RuleId } from "../src/index.ts";
 import { FIXTURES_DIR } from "./corpus.ts";
 
 const dtd = (w: number, h: number, hz: string) => {
@@ -66,6 +66,7 @@ const cta = (e: Edid): CtaExtension => {
 const withCta = (e: Edid, f: (c: CtaExtension) => CtaExtension): Edid => ({ ...e, extensions: e.extensions.map((x, i) => (i === 0 && x.kind === "cta" ? f(x) : x)) });
 const withBlocks = (e: Edid, f: (b: readonly DataBlock[]) => DataBlock[]): Edid => withCta(e, (c) => ({ ...c, dataBlocks: f(c.dataBlocks) }));
 const withVsdb = (e: Edid, f: (b: HdmiVsdb) => HdmiVsdb): Edid => withBlocks(e, (bs) => bs.map((b) => (b.kind === "hdmiVsdb" ? f(b) : b)));
+const withForum = (e: Edid, f: (b: HdmiForumVsdb) => HdmiForumVsdb): Edid => withBlocks(e, (bs) => bs.map((b) => (b.kind === "hdmiForumVsdb" ? f(b) : b)));
 const withBase = (e: Edid, f: (b: Edid["base"]) => Partial<Edid["base"]>): Edid => ({ ...e, base: { ...e.base, ...f(e.base) } });
 const withDescriptor = (e: Edid, index: number, d: Descriptor): Edid => withBase(e, (b) => ({ descriptors: b.descriptors.map((x, i) => (i === index ? d : x)) }));
 const raw = (bytes: number[]): Descriptor => ({ kind: "raw", bytes: [...bytes, ...new Array<number>(18 - bytes.length).fill(0)] });
@@ -128,6 +129,21 @@ const CASES: Record<RuleId, Case> = {
   "hdmi.vsdb-tmds": { input: withVsdb(clean, (b) => ({ ...b, maxTmdsClock5MHz: 100 })), fixable: true },
   "hdmi.max-tmds": { input: withBlocks(clean, (bs) => bs.map((b) => (b.kind === "hdmiForumVsdb" ? { ...b, maxTmdsCharRate5MHz: 80 } : b))), fixable: false },
   "hdmi.forum-vsdb-needed": { input: withBlocks(clean, (bs) => bs.filter((b) => b.kind !== "hdmiForumVsdb")), fixable: false },
+  "hdmi.forum-rate": { input: withForum(clean, (b) => ({ ...b, maxTmdsCharRate5MHz: 60 })), fixable: false },
+  "hdmi.frl-tmds": { input: withForum(clean, (b) => ({ ...b, maxTmdsCharRate5MHz: 100, maxFrlRate: 3 })), fixable: true },
+  // HDMI VIC 1 with its CTA equivalent, VIC 95, listed: the HDMI Forum UHD VIC bit must say so.
+  "hdmi.uhd-vic": {
+    input: withVsdb(withBlocks(clean, (bs) => [{ kind: "video", svds: [{ vic: 95, native: false }] }, ...bs]), (b) => ({ ...b, tail: [0x20, 0x00, 0x20, 0x01] })),
+    fixable: true,
+  },
+  "hdmi.vrr-range": {
+    input: withForum(clean, (b) => ({
+      ...b,
+      features21: { fapaEndExtended: false, qms: false, mDelta: false, cinemaVrr: false, negativeMvrr: false, fva: false, allm: false, fapaStartLocation: false },
+      vrr: { min: 50, max: 0 },
+    })),
+    fixable: false,
+  },
   "hdmi.vic-equivalents": { input: withVsdb(clean, (b) => ({ ...b, tail: [0x20, 0x00, 0x20, 0x01] })), fixable: true },
   "color.y444-flag": { input: withVsdb(clean, (b) => ({ ...b, capabilities: { ...(b.capabilities ?? fail()), dcY444: true } })), fixable: true },
   "color.y444-depth": {

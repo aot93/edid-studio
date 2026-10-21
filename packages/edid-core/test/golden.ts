@@ -70,6 +70,11 @@ export const GOLDEN: readonly Golden[] = [
     expectFailures: [],
   },
   {
+    name: "4K120 10-bit RGB in DisplayID, FRL, HDMI 2.1",
+    bytes: () => serializeEdid(buildEdid({ ...base, link: "hdmi2.1", timing: timing(1920, 1080, "120"), displayIdTimings: [displayId(3840, 2160, "120", "cvt-rb2")] })),
+    expectFailures: [],
+  },
+  {
     name: "4K50 10-bit, single mode (no 640x480)",
     bytes: () => serializeEdid(buildEdid({ ...base, include640x480: false, timing: timing(3840, 2160, "50") })),
     expectFailures: [NO_640],

@@ -2,7 +2,7 @@
 // format and depth? The link carries blanking, so load is the pixel clock
 // (total pixels per second) times bits per pixel, not visible pixels.
 
-export type Link = "dvi" | "hdmi1.4" | "hdmi2.0";
+export type Link = "dvi" | "hdmi1.4" | "hdmi2.0" | "hdmi2.1";
 export type ColourFormat = "rgb" | "ycbcr444" | "ycbcr422" | "ycbcr420";
 export type Depth = 8 | 10 | 12 | 16;
 
@@ -10,7 +10,54 @@ export const LINKS: Record<Link, { readonly name: string; readonly limitKHz: num
   dvi: { name: "DVI single link", limitKHz: 165_000, limitLabel: "165 MHz pixel clock" },
   "hdmi1.4": { name: "HDMI 1.4", limitKHz: 340_000, limitLabel: "340 MHz TMDS" },
   "hdmi2.0": { name: "HDMI 2.0", limitKHz: 600_000, limitLabel: "600 MHz TMDS" },
+  "hdmi2.1": { name: "HDMI 2.1", limitKHz: 600_000, limitLabel: "600 MHz TMDS or 48 Gbps FRL" },
 };
+
+/** One HDMI 2.1 Fixed Rate Link rate, as coded in the HDMI Forum VSDB (edid-decode max_frl_rates). */
+export interface FrlRate {
+  readonly code: number;
+  readonly lanes: 3 | 4;
+  readonly gbpsPerLane: number;
+  /** Payload after 16b/18b coding, in kbit/s. */
+  readonly payloadKbps: number;
+}
+
+/**
+ * FRL rates 1 to 6. Payload is lanes x rate x 16/18. TODO(verify): the HDMI
+ * 2.1 FRL capacity computation also budgets RS FEC, map and audio overhead;
+ * this is the 16b/18b bound only, so a stream close to it may not fit.
+ */
+export const FRL_RATES: readonly FrlRate[] = (
+  [
+    [1, 3, 3],
+    [2, 3, 6],
+    [3, 4, 6],
+    [4, 4, 8],
+    [5, 4, 10],
+    [6, 4, 12],
+  ] as const
+).map(([code, lanes, gbpsPerLane]) => ({ code, lanes, gbpsPerLane, payloadKbps: (lanes * gbpsPerLane * 1_000_000 * 16) / 18 }));
+
+/** The lowest FRL rate that carries `kbps` of video, if any does. */
+export function frlRateFor(kbps: number): FrlRate | undefined {
+  return FRL_RATES.find((r) => r.payloadKbps >= kbps);
+}
+
+/**
+ * Bits per pixel on an FRL link. TODO(verify): 4:2:2 is taken as the same
+ * 12-bit, two-component container it uses on TMDS.
+ */
+export function frlBitsPerPixel(format: ColourFormat, depth: Depth): number {
+  switch (format) {
+    case "rgb":
+    case "ycbcr444":
+      return 3 * depth;
+    case "ycbcr422":
+      return 24;
+    case "ycbcr420":
+      return 1.5 * depth;
+  }
+}
 
 export const FORMAT_NAMES: Record<ColourFormat, string> = {
   rgb: "RGB",
@@ -46,6 +93,10 @@ export interface Feasibility {
   readonly fits: boolean;
   /** Why it does not apply on this link, if it does not (e.g. DVI has no YCbCr). */
   readonly unsupported?: string;
+  /** HDMI 2.1: the FRL rate it needs when TMDS cannot carry it. */
+  readonly frl?: FrlRate;
+  /** HDMI 2.1: video bit rate in kbit/s, when it goes over FRL or fits nothing. */
+  readonly kbps?: number;
 }
 
 /** One row per format and depth: the rate the link must carry and whether it fits. */
@@ -56,13 +107,19 @@ export function feasibility(pixelClockKHz: number, link: Link): Feasibility[] {
       if (link === "dvi" && (format !== "rgb" || depth !== 8)) {
         return { format, depth, rateKHz: pixelClockKHz, fits: false, unsupported: "DVI carries 8-bit RGB only" };
       }
-      if (format === "ycbcr420" && link !== "hdmi2.0") {
+      if (format === "ycbcr420" && link !== "hdmi2.0" && link !== "hdmi2.1") {
         return { format, depth, rateKHz: tmdsRateKHz(pixelClockKHz, format, depth), fits: false, unsupported: "4:2:0 needs HDMI 2.0" };
       }
       if (format === "ycbcr422" && depth === 16) {
         return { format, depth, rateKHz: pixelClockKHz, fits: false, unsupported: "4:2:2 tops out at 12-bit" };
       }
       const rateKHz = link === "dvi" ? pixelClockKHz : tmdsRateKHz(pixelClockKHz, format, depth);
+      if (link === "hdmi2.1" && rateKHz > limit) {
+        // Above 600 MHz TMDS, HDMI 2.1 switches to FRL.
+        const kbps = pixelClockKHz * frlBitsPerPixel(format, depth);
+        const frl = frlRateFor(kbps);
+        return { format, depth, rateKHz, fits: frl !== undefined, kbps, ...(frl ? { frl } : {}) };
+      }
       return { format, depth, rateKHz, fits: rateKHz <= limit };
     }),
   );
@@ -142,11 +199,15 @@ export function linkReport(
       : [];
     let message = "";
     if (first) {
-      const needs = tooFast.map((r) => `${r.depth}-bit RGB needs ${(r.rateKHz / 1000).toFixed(2)} MHz`).join(", ");
+      // Over FRL the load is a bit rate; over TMDS it is the character rate.
+      const frl = tooFast.some((r) => r.kbps !== undefined);
+      const need = (r: Feasibility) => (r.kbps !== undefined ? `${(r.kbps / 1_000_000).toFixed(2)} Gbps` : `${(r.rateKHz / 1000).toFixed(2)} MHz`);
+      const needs = tooFast.map((r) => `${r.depth}-bit RGB needs ${need(r)}`).join(", ");
+      const via = (a: Feasibility) => (a.frl ? `FRL ${a.frl.gbpsPerLane} Gbps x ${a.frl.lanes}` : `${(a.rateKHz / 1000).toFixed(2)} MHz`);
       message =
-        `${mode} at ${(pixelClockKHz / 1000).toFixed(2)} MHz: ${needs} TMDS, above ${limit.name}'s ${limit.limitLabel}. ` +
+        `${mode} at ${(pixelClockKHz / 1000).toFixed(2)} MHz: ${needs}${frl ? "" : " TMDS"}, above ${limit.name}'s ${limit.limitLabel}. ` +
         (alternatives.length > 0
-          ? `${first.depth}-bit fits as ${alternatives.map((a) => `${FORMAT_NAMES[a.format]} (${(a.rateKHz / 1000).toFixed(2)} MHz)`).join(" or ")}.`
+          ? `${first.depth}-bit fits as ${alternatives.map((a) => `${FORMAT_NAMES[a.format]} (${via(a)})`).join(" or ")}.`
           : `No advertised format carries ${first.depth}-bit at this mode; expect the driver to fall back to 8-bit.`);
     }
     return { mode, pixelClockKHz, tooFast, alternatives, message, advertised: offered, ...(likely ? { likely } : {}) };

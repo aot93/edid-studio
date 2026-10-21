@@ -7,7 +7,7 @@ import { encodeManufacturerId } from "./base-block.ts";
 import { EXT_HF_EEODB } from "./cta.ts";
 import { displayIdSection } from "./displayid.ts";
 import { EdidEncodeError } from "./errors.ts";
-import { tmdsRateKHz } from "./link.ts";
+import { frlBitsPerPixel, frlRateFor, LINKS, tmdsRateKHz } from "./link.ts";
 import type { ColourFormat, Depth, Link } from "./link.ts";
 import type { CtaExtension, DataBlock, Descriptor, DetailedTimingDescriptor, DisplayIdTiming, Edid, Extension } from "./model.ts";
 import { autoRangeLimits, setColor, setMonitorName, setRangeLimits } from "./ops.ts";
@@ -158,8 +158,17 @@ export function buildEdid(intent: BuildIntent): Edid {
         tail: [],
       },
     ];
+    // Above 600 MHz TMDS, HDMI 2.1 needs FRL: the lowest rate that carries the fastest mode at the deepest depth.
+    let maxFrlRate = 0;
+    if (worst > 600_000) {
+      if (intent.link !== "hdmi2.1") throw new EdidEncodeError("link", `this mode needs ${(worst / 1000).toFixed(2)} MHz TMDS, above ${LINKS[intent.link].name}'s ${LINKS[intent.link].limitLabel}`);
+      const kbps = Math.max(...clocks.map((c) => Math.max(...intent.depths.map((d) => c * frlBitsPerPixel("rgb", d)))));
+      const frl = frlRateFor(kbps);
+      if (!frl) throw new EdidEncodeError("link", `this mode needs ${(kbps / 1_000_000).toFixed(2)} Gbps, above HDMI 2.1's 48 Gbps FRL`);
+      maxFrlRate = frl.code;
+    }
     if (worst > 340_000) {
-      if (intent.link !== "hdmi2.0") throw new EdidEncodeError("link", `this mode needs ${(worst / 1000).toFixed(2)} MHz TMDS, above HDMI 1.4's 340 MHz`);
+      if (intent.link === "hdmi1.4") throw new EdidEncodeError("link", `this mode needs ${(worst / 1000).toFixed(2)} MHz TMDS, above HDMI 1.4's 340 MHz`);
       dataBlocks.push({
         kind: "hdmiForumVsdb",
         version: 1,
@@ -172,7 +181,7 @@ export function buildEdid(intent: BuildIntent): Edid {
         independentView3d: false,
         dualView3d: false,
         osdDisparity3d: false,
-        maxFrlRate: 0,
+        maxFrlRate,
         uhdVic: false,
         dc48bit420: false,
         dc36bit420: false,

@@ -86,6 +86,8 @@ export interface HdmiCaps {
   readonly scdc?: boolean;
   /** Source physical address "A.B.C.D", each 0 to 15. */
   readonly physicalAddress?: string;
+  /** HDMI 2.1 max FRL rate code, 0 (none) to 6 (12 Gbps x 4); see FRL_RATES. */
+  readonly maxFrlRate?: number;
 }
 
 /**
@@ -109,7 +111,8 @@ export function setHdmiCaps(edid: Edid, caps: HdmiCaps): Edid {
   }
   const mhz = caps.maxTmdsMHz;
   if (mhz !== undefined && (!(mhz > 0) || mhz > 600)) throw new EdidEncodeError("max TMDS", `max TMDS ${mhz} MHz must be above 0 and at most 600`);
-  const needForum = (mhz !== undefined && mhz > 340) || caps.scdc === true;
+  if (caps.maxFrlRate !== undefined) inRange("max FRL rate", caps.maxFrlRate, 0, 6);
+  const needForum = (mhz !== undefined && mhz > 340) || caps.scdc === true || (caps.maxFrlRate ?? 0) > 0;
   const forumRate5MHz = mhz !== undefined && mhz > 340 ? Math.ceil(mhz / 5) : 0;
 
   let done = false;
@@ -125,7 +128,7 @@ export function setHdmiCaps(edid: Edid, caps: HdmiCaps): Edid {
           ...(mhz !== undefined ? { maxTmdsClock5MHz: Math.ceil(Math.min(mhz, 340) / 5) } : {}),
         });
         if (needForum && !hadForum) {
-          blocks.push({ ...forumVsdb(), maxTmdsCharRate5MHz: forumRate5MHz, scdcPresent: caps.scdc ?? true });
+          blocks.push({ ...forumVsdb(), maxTmdsCharRate5MHz: forumRate5MHz, scdcPresent: caps.scdc ?? true, maxFrlRate: caps.maxFrlRate ?? 0 });
           hadForum = true;
         }
         continue;
@@ -135,6 +138,7 @@ export function setHdmiCaps(edid: Edid, caps: HdmiCaps): Edid {
           ...b,
           ...(mhz !== undefined ? { maxTmdsCharRate5MHz: forumRate5MHz } : {}),
           ...(caps.scdc !== undefined ? { scdcPresent: caps.scdc } : {}),
+          ...(caps.maxFrlRate !== undefined ? { maxFrlRate: caps.maxFrlRate } : {}),
         });
         continue;
       }

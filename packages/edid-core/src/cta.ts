@@ -9,6 +9,8 @@ import type {
   CtaExtension,
   DataBlock,
   Descriptor,
+  HdmiForumDsc,
+  HdmiForumFeatures,
   HdmiForumVsdb,
   HdmiVsdb,
   Svd,
@@ -29,6 +31,7 @@ const EXT_VIDEO_CAPABILITY = 0x00;
 const EXT_YCBCR420_VIDEO = 0x0e;
 const EXT_YCBCR420_CAPABILITY_MAP = 0x0f;
 export const EXT_HF_EEODB = 0x78;
+const EXT_HF_SCDB = 0x79;
 
 /** IEEE OUIs, as 24-bit values; stored little-endian in the block. */
 export const OUI_HDMI = 0x000c03;
@@ -147,6 +150,11 @@ function parseTypedDataBlock(bytes: readonly number[]): DataBlock | undefined {
         return { kind: "ycbcr420Video", svds: body.map(decodeSvd) };
       case EXT_YCBCR420_CAPABILITY_MAP:
         return { kind: "ycbcr420CapabilityMap", bitmap: body };
+      case EXT_HF_SCDB: {
+        // Two reserved bytes, then the HDMI Forum VSDB payload (edid-decode case 0x779).
+        const forum = body.length >= 2 ? parseHdmiForumVsdb(body.slice(2)) : undefined;
+        return forum ? { ...forum, scdb: [byteAt(body, 0), byteAt(body, 1)] } : undefined;
+      }
     }
   }
   return undefined;
@@ -175,7 +183,9 @@ export function serializeDataBlock(block: DataBlock): number[] {
     case "hdmiVsdb":
       return withHeader(TAG_VENDOR, [...ouiBytes(OUI_HDMI), ...serializeHdmiVsdb(block)]);
     case "hdmiForumVsdb":
-      return withHeader(TAG_VENDOR, [...ouiBytes(OUI_HDMI_FORUM), ...serializeHdmiForumVsdb(block)]);
+      return block.scdb
+        ? withHeader(TAG_EXTENDED, [EXT_HF_SCDB, ...block.scdb.map((v) => checkField("HDMI Forum SCDB reserved byte", v, 8)), ...serializeHdmiForumVsdb(block)])
+        : withHeader(TAG_VENDOR, [...ouiBytes(OUI_HDMI_FORUM), ...serializeHdmiForumVsdb(block)]);
     case "raw": {
       const bytes = block.bytes.map((v) => checkField("data block byte", v, 8));
       if (bytes.length === 0 || (byteAt(bytes, 0) & 0x1f) !== bytes.length - 1) {
@@ -331,8 +341,55 @@ function parseHdmiForumVsdb(body: readonly number[]): HdmiForumVsdb | undefined 
     dc48bit420: (g & 0x04) !== 0,
     dc36bit420: (g & 0x02) !== 0,
     dc30bit420: (g & 0x01) !== 0,
-    tail: body.slice(4),
+    ...(body.length >= 5 ? { features21: decodeFeatures21(b(4)) } : {}),
+    ...(body.length >= 7 ? { vrr: { min: b(5) & 0x3f, max: ((b(5) & 0xc0) << 2) | b(6) } } : {}),
+    ...(body.length >= 10 ? { dsc: decodeDsc(b(7), b(8), b(9)) } : {}),
+    tail: body.slice(body.length >= 10 ? 10 : body.length >= 7 ? 7 : body.length >= 5 ? 5 : 4),
   };
+}
+
+const bit = (v: number, n: number) => ((v >> n) & 1) === 1;
+
+function decodeFeatures21(v: number): HdmiForumFeatures {
+  return {
+    fapaEndExtended: bit(v, 7),
+    qms: bit(v, 6),
+    mDelta: bit(v, 5),
+    cinemaVrr: bit(v, 4),
+    negativeMvrr: bit(v, 3),
+    fva: bit(v, 2),
+    allm: bit(v, 1),
+    fapaStartLocation: bit(v, 0),
+  };
+}
+
+function encodeFeatures21(f: HdmiForumFeatures): number {
+  return [f.fapaStartLocation, f.allm, f.fva, f.negativeMvrr, f.cinemaVrr, f.mDelta, f.qms, f.fapaEndExtended].reduce((a, on, i) => a | (on ? 1 << i : 0), 0);
+}
+
+function decodeDsc(x7: number, x8: number, x9: number): HdmiForumDsc {
+  return {
+    dsc12a: bit(x7, 7),
+    native420: bit(x7, 6),
+    qmsTfrMax: bit(x7, 5),
+    qmsTfrMin: bit(x7, 4),
+    allBpp: bit(x7, 3),
+    bpc16: bit(x7, 2),
+    bpc12: bit(x7, 1),
+    bpc10: bit(x7, 0),
+    maxSlices: x8 & 0x0f,
+    maxFrlRate: x8 >> 4,
+    totalChunkKBytes: x9 & 0x3f,
+    reserved: x9 >> 6,
+  };
+}
+
+function encodeDsc(d: HdmiForumDsc): number[] {
+  return [
+    [d.bpc10, d.bpc12, d.bpc16, d.allBpp, d.qmsTfrMin, d.qmsTfrMax, d.native420, d.dsc12a].reduce((a, on, i) => a | (on ? 1 << i : 0), 0),
+    (checkField("DSC max FRL rate", d.maxFrlRate, 4) << 4) | checkField("DSC max slices", d.maxSlices, 4),
+    (checkField("DSC byte 9 reserved bits", d.reserved, 2) << 6) | checkField("DSC total chunk bytes", d.totalChunkKBytes, 6),
+  ];
 }
 
 function serializeHdmiForumVsdb(b: HdmiForumVsdb): number[] {
@@ -352,8 +409,27 @@ function serializeHdmiForumVsdb(b: HdmiForumVsdb): number[] {
       (b.dc48bit420 ? 0x04 : 0) |
       (b.dc36bit420 ? 0x02 : 0) |
       (b.dc30bit420 ? 0x01 : 0),
+    ...groups(b),
     ...b.tail.map((v) => checkField("HDMI Forum VSDB byte", v, 8)),
   ];
+}
+
+/** Bytes 4 to 9, as far as the groups go. A later group needs the earlier ones. */
+function groups(b: HdmiForumVsdb): number[] {
+  const out: number[] = [];
+  if (!b.features21) {
+    if (b.vrr || b.dsc) throw new EdidEncodeError("HDMI Forum VSDB", "VRR or DSC fields need the HDMI 2.1 feature byte before them");
+    return out;
+  }
+  out.push(encodeFeatures21(b.features21));
+  if (!b.vrr) {
+    if (b.dsc) throw new EdidEncodeError("HDMI Forum VSDB", "DSC fields need the VRR bytes before them");
+    return out;
+  }
+  const max = checkField("VRRmax", b.vrr.max, 10);
+  out.push((checkField("VRRmin", b.vrr.min, 6) | ((max >> 8) << 6)) & 0xff, max & 0xff);
+  if (b.dsc) out.push(...encodeDsc(b.dsc));
+  return out;
 }
 
 /**

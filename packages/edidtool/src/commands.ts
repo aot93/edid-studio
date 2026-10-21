@@ -203,14 +203,15 @@ function linkTable(clockKHz: number, l: Link): string[] {
   const depthsShown = [8, 10, 12, 16] as const;
   const head = `${"".padEnd(13)}${depthsShown.map((d) => `${d}-bit`.padStart(12)).join("")}`;
   return [
-    `${LINKS[l].name}, limit ${LINKS[l].limitLabel} (rates include blanking):`,
+    `${LINKS[l].name}, limit ${LINKS[l].limitLabel} (rates include blanking${l === "hdmi2.1" ? "; FRL capacity approximate, 16b/18b only" : ""}):`,
     head,
     ...(["rgb", "ycbcr444", "ycbcr422", "ycbcr420"] as const).map((f) =>
       `${FORMAT_NAMES[f].padEnd(13)}${depthsShown
         .map((d) => {
           const x = rows.find((y) => y.format === f && y.depth === d);
           if (!x || x.unsupported) return "-".padStart(12);
-          return `${(x.rateKHz / 1000).toFixed(1)} ${x.fits ? "ok" : "no"}`.padStart(12);
+          const v = x.frl ? `FRL${x.frl.gbpsPerLane}x${x.frl.lanes}` : x.kbps !== undefined ? `${(x.kbps / 1_000_000).toFixed(1)}G` : (x.rateKHz / 1000).toFixed(1);
+          return `${v} ${x.fits ? "ok" : "no"}`.padStart(12);
         })
         .join("")}`,
     ),
@@ -241,7 +242,9 @@ export function budget(args: readonly string[]): number {
     `${w}x${h} @ ${refresh} Hz (${FORMULA_NAMES[r.request.formula]}): pixel clock ${mhz(clock)}`,
     row.unsupported
       ? `${depth}-bit ${FORMAT_NAMES[format]}: ${row.unsupported}`
-      : `${depth}-bit ${FORMAT_NAMES[format]} needs ${mhz(row.rateKHz)}; ${LINKS[l].name} carries ${LINKS[l].limitLabel}: ${fits ? "fits" : "does not fit"}`,
+      : row.kbps !== undefined
+        ? `${depth}-bit ${FORMAT_NAMES[format]} needs ${(row.kbps / 1_000_000).toFixed(2)} Gbps (${mhz(row.rateKHz)} TMDS is above 600): ${row.frl ? `fits over FRL ${row.frl.gbpsPerLane} Gbps x ${row.frl.lanes} (approximate)` : "does not fit, even at 48 Gbps FRL"}`
+        : `${depth}-bit ${FORMAT_NAMES[format]} needs ${mhz(row.rateKHz)}; ${LINKS[l].name} carries ${LINKS[l].limitLabel}: ${fits ? "fits" : "does not fit"}`,
     `Fits ${LINKS[l].name} at this clock: ${fitting.join(", ") || "nothing"}`,
   ]);
   return fits ? EXIT.clean : EXIT.errors;

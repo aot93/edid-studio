@@ -17,6 +17,7 @@ export function LinkTable({ pixelClockKHz, link, advertised, likely }: Props) {
     <table className="linktable">
       <caption>
         {LINKS[link].name}: limit {LINKS[link].limitLabel}. Rates include blanking.
+        {link === "hdmi2.1" && " Above 600 MHz TMDS a cell shows the FRL rate it needs; FRL capacity is an approximation (16b/18b only)."}
       </caption>
       <thead>
         <tr>
@@ -48,9 +49,9 @@ export function LinkTable({ pixelClockKHz, link, advertised, likely }: Props) {
                 <td
                   key={d}
                   className={`r ${r.fits ? "fit" : "over"}${adv ? " adv" : ""}${pick ? " likely" : ""}`}
-                  title={`${(r.rateKHz / 1000).toFixed(2)} MHz ${r.fits ? "fits" : "exceeds the limit"}${adv ? ", advertised" : ""}${pick ? ", likely choice" : ""}`}
+                  title={`${r.kbps !== undefined ? `${(r.kbps / 1_000_000).toFixed(2)} Gbps${r.frl ? ` over FRL ${r.frl.gbpsPerLane} Gbps x ${r.frl.lanes}` : ""}` : `${(r.rateKHz / 1000).toFixed(2)} MHz`} ${r.fits ? "fits" : "exceeds the limit"}${adv ? ", advertised" : ""}${pick ? ", likely choice" : ""}`}
                 >
-                  {(r.rateKHz / 1000).toFixed(1)}
+                  {r.frl ? `FRL ${r.frl.gbpsPerLane}x${r.frl.lanes}` : r.kbps !== undefined ? `${(r.kbps / 1_000_000).toFixed(1)}G` : (r.rateKHz / 1000).toFixed(1)}
                   <span className="sr-only">
                     {r.fits ? " fits" : " too fast"}
                     {adv ? ", advertised" : ""}
