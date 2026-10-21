@@ -1,8 +1,7 @@
 import { useMemo, useState } from "react";
-import { analyzeLink, byteDiff, describeDtd, edidLayout, LINKS, modeLabel, printable, serializeEdid } from "@edid-studio/core";
+import { byteDiff, describeDtd, edidLayout, LINKS, modeLabel, printable, serializeEdid } from "@edid-studio/core";
 import type { LayoutNode, Link } from "@edid-studio/core";
-import { collectIssues } from "../issues.ts";
-import type { Issue } from "../issues.ts";
+import { collectIssues, worstByNode } from "../issues.ts";
 import { monitorName, nodeAtOffset, nodeLabel, preferredTiming } from "../model-view.ts";
 import { current } from "../session.ts";
 import type { Session } from "../session.ts";
@@ -37,12 +36,10 @@ export function Workspace({ session, onEdit }: Props) {
   const selected = nodes.find((n) => n.id === selectedId) ?? nodes[0];
   const [link, setLink] = useState<Link>("hdmi2.0");
   const [timingTarget, setTimingTarget] = useState<TimingTarget | null>(null);
-  const issues = useMemo(() => {
-    const linkIssues = analyzeLink(edid, link)
-      .filter((r) => r.message !== "")
-      .map((r): Issue => ({ severity: "error", message: r.message }));
-    return [...linkIssues, ...collectIssues(edid, layout, session.source.checksumErrors)];
-  }, [edid, layout, link, session.source.checksumErrors]);
+  const issues = useMemo(() => collectIssues(edid, bytes, layout, session.source.checksumErrors, link), [edid, bytes, layout, session.source.checksumErrors, link]);
+  const badges = useMemo(() => worstByNode(issues), [issues]);
+  const errors = issues.filter((i) => i.severity === "error").length;
+  const warnings = issues.filter((i) => i.severity === "warning").length;
 
   const changed = (n: LayoutNode) => {
     if (n.ref.type === "checksum" || n.ref.type === "padding") return false;
@@ -96,7 +93,7 @@ export function Workspace({ session, onEdit }: Props) {
       {timingTarget !== null && <TimingPanel key={JSON.stringify(timingTarget)} target={timingTarget} link={link} onEdit={onEdit} onClose={() => setTimingTarget(null)} />}
 
       <div className="panes">
-        <StructureTree edid={edid} layout={layout} selectedId={selected?.id ?? ""} changed={changed} onSelect={setSelectedId} onHover={setHovered} />
+        <StructureTree edid={edid} layout={layout} selectedId={selected?.id ?? ""} changed={changed} badges={badges} onSelect={setSelectedId} onHover={setHovered} />
         <HexView
           bytes={bytes}
           diff={diff}
@@ -115,16 +112,30 @@ export function Workspace({ session, onEdit }: Props) {
             <h2 className="section" id="issues-title">
               Issues
             </h2>
-            {issues.length === 0 ? (
-              <p className="empty">Every advertised mode fits {LINKS[link].name} at every advertised depth. Full validation rules arrive in a later release.</p>
-            ) : (
+            <p className={`summary ${errors > 0 ? "bad" : warnings > 0 ? "warn" : "good"}`} role="status">
+              {errors > 0
+                ? `${errors} ${errors === 1 ? "error" : "errors"}: export is blocked until ${errors === 1 ? "it is" : "they are"} fixed.`
+                : warnings > 0
+                  ? `No errors; ${warnings} ${warnings === 1 ? "warning" : "warnings"} to review.`
+                  : `No errors or warnings. Every advertised mode fits ${LINKS[link].name}.`}
+            </p>
+            {issues.length > 0 && (
               <ul className="issues">
                 {issues.map((issue, i) => (
                   <li key={i} className={issue.severity}>
-                    {issue.nodeId !== undefined ? (
-                      <button onClick={() => issue.nodeId !== undefined && setSelectedId(issue.nodeId)}>{issue.message}</button>
-                    ) : (
-                      issue.message
+                    <span className="sev">{issue.severity}</span>
+                    {issue.rule && <code className="rule">{issue.rule}</code>}
+                    <div>
+                      {issue.nodeId !== undefined ? (
+                        <button onClick={() => issue.nodeId !== undefined && setSelectedId(issue.nodeId)}>{issue.message}</button>
+                      ) : (
+                        issue.message
+                      )}
+                    </div>
+                    {issue.fix && (
+                      <button className="btn small fixbtn" onClick={() => issue.fix && onEdit(`Fix ${issue.rule ?? ""}: ${issue.fix.label}`, issue.fix.apply)}>
+                        Fix: {issue.fix.label}
+                      </button>
                     )}
                   </li>
                 ))}

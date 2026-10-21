@@ -20,7 +20,8 @@ test("reproduces the Tessera fix in the UI, byte for byte", async ({ page }) => 
   await page.getByLabel("Paste hex").fill(fixture("Tessera-EJE-test.txt"));
   await page.getByRole("button", { name: "Load pasted hex" }).click();
   // The editor explains why the original falls back from 10-bit.
-  await expect(page.locator("ul.issues li.error").first()).toContainText("10-bit RGB needs 742.50 MHz");
+  await expect(page.locator("ul.issues li.warning", { hasText: "10-bit RGB needs 742.50 MHz" }).first()).toBeVisible();
+  await expect(page.locator("ul.issues li.warning code.rule", { hasText: "link.too-fast" }).first()).toBeVisible();
 
   // 1. Custom 4K50 timing with the case-study porches; strip every other mode.
   await page.getByRole("button", { name: "Custom resolution…" }).click();

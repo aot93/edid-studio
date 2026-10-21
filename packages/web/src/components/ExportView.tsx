@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { downloadFileName, EdidExportError, exportEdid, ONE_LINE_HEX_STYLE } from "@edid-studio/core";
+import { downloadFileName, EdidExportError, exportEdid, ONE_LINE_HEX_STYLE, validateBytes } from "@edid-studio/core";
 import type { ExportFormat } from "@edid-studio/core";
 import { saveFile } from "../download.ts";
 import { current } from "../session.ts";
@@ -20,6 +20,10 @@ export function ExportView({ session }: { readonly session: Session }) {
     }
   }, [edid, style]);
   const fileName = downloadFileName(edid, format);
+  // SPEC.md section 8: nothing is exported while any rule reports an error.
+  const validation = useMemo(() => (result.error === null ? validateBytes(result.bin) : null), [result]);
+  const blocking = validation?.issues.filter((i) => i.severity === "error") ?? [];
+  const warnings = validation?.warnings ?? 0;
 
   return (
     <section aria-labelledby="export-title">
@@ -61,11 +65,26 @@ export function ExportView({ session }: { readonly session: Session }) {
                 <strong>Export refused.</strong> {result.error}
               </p>
             </div>
+          ) : blocking.length > 0 ? (
+            <div className="alert" role="alert">
+              <p>
+                <strong>Export blocked: {blocking.length} {blocking.length === 1 ? "error" : "errors"}.</strong> Fix {blocking.length === 1 ? "it" : "them"} in the
+                editor's Issues panel; most have a one-click fix.
+              </p>
+              <ul className="issues">
+                {blocking.map((i, n) => (
+                  <li key={n} className="error">
+                    <code className="rule">{i.rule}</code> {i.message}
+                  </li>
+                ))}
+              </ul>
+            </div>
           ) : (
             <>
-              <div className="alert ok">
+              <div className={`alert ${warnings > 0 ? "warn" : "ok"}`}>
                 <p>
-                  <strong>{result.bin.length} bytes</strong>, {result.bin.length / 128} {result.bin.length === 128 ? "block" : "blocks"}, all checksums correct.
+                  <strong>{result.bin.length} bytes</strong>, {result.bin.length / 128} {result.bin.length === 128 ? "block" : "blocks"}, checksums correct, no
+                  errors{warnings > 0 ? `; ${warnings} ${warnings === 1 ? "warning" : "warnings"} to review in the editor` : ""}.
                 </p>
               </div>
               <div className="row mt">

@@ -1,7 +1,7 @@
 // Pure edit operations. Each returns a new model and leaves the input
 // untouched; serializeEdid checks the result. Recipes (M3) will log these.
 
-import { ESTABLISHED_TIMINGS, isEstablishedSet } from "./base-timings.ts";
+import { decodeStandardTiming, ESTABLISHED_TIMINGS, isEstablishedSet } from "./base-timings.ts";
 import { describeDtd, lookupVic } from "./describe.ts";
 import { EdidEncodeError } from "./errors.ts";
 import type { ColourFormat, Depth } from "./link.ts";
@@ -367,7 +367,7 @@ export function setRangeLimits(edid: Edid, spec: RangeLimitsSpec): Edid {
 
 /**
  * Range limits that cover every established timing, detailed timing and
- * listed VIC (standard timings are not yet included): vertical
+ * listed VIC, plus the refresh of every standard timing: vertical
  * and horizontal rates rounded outward, maximum clock rounded up to 10 MHz
  * (SPEC.md section 8).
  */
@@ -394,8 +394,10 @@ export function autoRangeLimits(edid: Edid, gtf: RangeLimitsSpec["gtf"] = "none"
   }
   if (modes.length === 0) return undefined;
   const hKHz = modes.map((m) => m.hKHz);
+  // Standard timings state their refresh exactly; their line rate depends on GTF or CVT, so they set only the vertical range.
+  const refreshes = [...modes.map((m) => m.refreshHz), ...edid.base.standardTimings.flatMap((c) => decodeStandardTiming(c)?.refreshHz ?? [])];
   return {
-    vHz: [Math.floor(Math.min(...modes.map((m) => m.refreshHz))), Math.ceil(Math.max(...modes.map((m) => m.refreshHz)))],
+    vHz: [Math.floor(Math.min(...refreshes)), Math.ceil(Math.max(...refreshes))],
     hKHz: [Math.floor(Math.min(...hKHz)), Math.ceil(Math.max(...hKHz))],
     maxClockMHz: Math.ceil(Math.max(...modes.map((m) => m.clockKHz)) / 10_000) * 10,
     gtf,

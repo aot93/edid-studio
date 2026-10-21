@@ -47,9 +47,17 @@ test("strip down a sample and download it", async ({ page }) => {
   await page.getByRole("button", { name: "HDMI 1.4 VSDB" }).click();
   await page.getByLabel("10-bit").check();
   await expect(page.locator(".history li")).toHaveCount(3);
+  await expect(page.locator(".tree .badge.err")).toHaveCount(1);
 
+  // The sample's HDMI VSDB claims 600 MHz, above the field's 340 MHz limit: export is blocked until fixed.
   await page.getByRole("button", { name: "Export…" }).click();
-  await expect(page.getByText("all checksums correct")).toBeVisible();
+  await expect(page.getByText(/Export blocked: 1 error/)).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Download/ })).toHaveCount(0);
+  await page.getByRole("button", { name: "Back to editor" }).click();
+  await page.getByRole("button", { name: "Fix: Set it to 340 MHz" }).click();
+  await expect(page.locator("p.summary")).toContainText("No errors");
+  await page.getByRole("button", { name: "Export…" }).click();
+  await expect(page.getByText(/checksums correct, no errors/)).toBeVisible();
   const [download] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: /^Download/ }).click()]);
   expect(download.suggestedFilename()).toBe("DELL-P2415Q.txt");
 
@@ -61,7 +69,7 @@ test("strip down a sample and download it", async ({ page }) => {
   if (cta?.kind !== "cta") throw new Error("CTA block missing");
   const vics = cta.dataBlocks.flatMap((b) => (b.kind === "video" ? b.svds.map((s) => s.vic) : []));
   expect(vics).not.toContain(97);
-  expect(cta.dataBlocks.find((b) => b.kind === "hdmiVsdb")).toMatchObject({ capabilities: { dc30bit: true } });
+  expect(cta.dataBlocks.find((b) => b.kind === "hdmiVsdb")).toMatchObject({ capabilities: { dc30bit: true }, maxTmdsClock5MHz: 68 });
   expect(problems).toEqual([]);
 });
 
