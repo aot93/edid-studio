@@ -113,7 +113,7 @@ Every export asserts that its length is 128 x (1 + extension count) and that eve
 
 The timing engine turns "width x height at a refresh rate" into an exact, encodable timing, or says precisely why it cannot.
 
-**Inputs:** active size; refresh as a rational (50, or 60000/1001 for 59.94); interlace; a formula (CTA-861 VIC lookup, VESA DMT lookup, CVT, CVT-RB v1/v2/v3, GTF, or manual porches and sync); and an exact-refresh switch.
+**Inputs:** active size; refresh as a rational (50, or 60000/1001 for 59.94); a formula (CTA-861 VIC lookup, VESA DMT lookup, CVT, CVT-RB v1/v2/v3, GTF, or manual porches and sync); and an exact-refresh switch. Timings are progressive only: owner decision (2026-10-21), interlaced input will not be built. Interlaced timings in imported EDIDs are still decoded and preserved.
 
 **Outputs:** pixel clock in 10 kHz units; horizontal and vertical active, front porch, sync, back porch and polarity; the achieved refresh as a rational with its error in ppm; and an encodings list saying whether the timing fits a DTD, matches a VIC, or needs a DisplayID block.
 
