@@ -7,6 +7,6 @@
     "jsx": "react-jsx",
     "types": ["vite/client", "node"]
   },
-  "include": ["src", "e2e", "vite.config.ts", "playwright.config.ts"],
+  "include": ["src", "e2e", "vite.config.ts", "offline.ts", "playwright.config.ts"],
   "references": [{ "path": "../edid-core" }]
 }

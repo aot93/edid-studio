@@ -50,6 +50,7 @@ pnpm cli -- --help
 pnpm cli -- recipe run recipe.json -o out.txt
 pnpm dev        # web UI at http://localhost:5173
 pnpm build      # static site in packages/web/dist
+pnpm build:offline   # one self-contained HTML file for offline workstations
 pnpm e2e        # build, then browser tests (Playwright)
 pnpm edid-decode   # build the pinned edid-decode for the cross-check tests
 ```
@@ -62,6 +63,15 @@ The page carries a Content Security Policy in a meta tag; hosts that read
 `_headers` (Cloudflare Pages, Netlify) also get `frame-ancestors`, `nosniff`
 and the other headers from `packages/web/public/_headers`. Elsewhere, set
 those headers in the host's configuration.
+
+## Offline workstations
+
+`pnpm build:offline` writes a single file, `packages/web/dist-offline/edid-studio.html`
+(about 650 KB), with everything inlined: no server, no install and no network.
+Copy it to the workstation and open it in Firefox (right-click, Open with,
+Firefox, if Firefox is not the default browser). It needs Firefox 115 or later;
+ESR is fine. CI builds the file on every run and keeps it as the
+`edid-studio-offline` artifact.
 
 ## Milestones
 

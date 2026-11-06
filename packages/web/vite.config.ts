@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import type { Plugin } from "vite";
+import { offlineSingleFile } from "./offline.ts";
 
 /**
  * Content Security Policy for the built site (SPEC.md section 13). Added at
@@ -48,8 +49,18 @@ function sampleEdid(): Plugin {
   };
 }
 
-export default defineConfig({
-  base: "./",
-  plugins: [react(), sampleEdid(), contentSecurityPolicy()],
-  build: { assetsInlineLimit: 0, sourcemap: false },
-});
+export default defineConfig(({ mode }) =>
+  mode === "offline"
+    ? {
+        // One self-contained file for offline workstations (offline.ts).
+        base: "./",
+        publicDir: false,
+        plugins: [react(), sampleEdid(), ...offlineSingleFile(new URL("./public/", import.meta.url))],
+        build: { outDir: "dist-offline", assetsInlineLimit: Number.MAX_SAFE_INTEGER, cssCodeSplit: false, sourcemap: false },
+      }
+    : {
+        base: "./",
+        plugins: [react(), sampleEdid(), contentSecurityPolicy()],
+        build: { assetsInlineLimit: 0, sourcemap: false },
+      },
+);

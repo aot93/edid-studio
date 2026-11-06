@@ -1,7 +1,10 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import { importEdid } from "@edid-studio/core";
+import { offlinePage } from "../playwright.config.ts";
+
+const offline = () => test.info().project.name === "offline-firefox";
 
 /** Fails the test on console errors, CSP violations or any off-site request. */
 function guard(page: Page): string[] {
@@ -12,13 +15,14 @@ function guard(page: Page): string[] {
   page.on("pageerror", (e) => problems.push(`pageerror: ${e.message}`));
   page.on("request", (r) => {
     const url = new URL(r.url());
-    if (url.protocol !== "data:" && url.protocol !== "blob:" && url.host !== "localhost:4173") problems.push(`request: ${r.url()}`);
+    const local = url.protocol === "data:" || url.protocol === "blob:" || url.href === offlinePage || url.host === "localhost:4173";
+    if (!local) problems.push(`request: ${r.url()}`);
   });
   return problems;
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.goto("/");
+  await page.goto("");
 });
 
 test("shows the VYV logo and the headline", async ({ page }) => {
@@ -26,15 +30,28 @@ test("shows the VYV logo and the headline", async ({ page }) => {
   await expect(logo).toBeVisible();
   expect(await logo.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(271);
   await expect(page.getByRole("heading", { name: "Make the GPU pick the mode you want" })).toBeVisible();
-  const icon = await page.locator('link[rel="icon"][sizes="32x32"]').getAttribute("href");
-  expect((await page.request.get(new URL(icon ?? "", page.url()).href)).headers()["content-type"]).toBe("image/png");
+  const icon = (await page.locator('link[rel="icon"]').first().getAttribute("href")) ?? "";
+  if (offline()) expect(icon).toMatch(/^data:image\/png;base64,/);
+  else expect((await page.request.get(new URL(icon, page.url()).href)).headers()["content-type"]).toBe("image/png");
 });
 
 test("serves a Content Security Policy that blocks network access", async ({ page }) => {
   const csp = await page.locator('meta[http-equiv="Content-Security-Policy"]').getAttribute("content");
-  expect(csp).toContain("default-src 'self'");
   expect(csp).toContain("connect-src 'none'");
-  expect(csp).toContain("script-src 'self'");
+  if (offline()) {
+    // One file: inline code only by hash, nothing loaded from anywhere (offline.ts).
+    expect(csp).toContain("default-src 'none'");
+    expect(csp).toMatch(/script-src 'sha256-[A-Za-z0-9+/=]+';/);
+    expect(csp).not.toContain("unsafe-inline");
+  } else {
+    expect(csp).toContain("default-src 'self'");
+    expect(csp).toContain("script-src 'self'");
+  }
+});
+
+test("the offline build is one file", async () => {
+  test.skip(!offline(), "offline build only");
+  expect(readdirSync(new URL("../dist-offline/", import.meta.url))).toEqual(["edid-studio.html"]);
 });
 
 test("strip down a sample and download it", async ({ page }) => {

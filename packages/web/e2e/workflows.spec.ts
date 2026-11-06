@@ -16,7 +16,7 @@ async function fill(page: Page, values: Record<string, string>) {
 }
 
 test("reproduces the Tessera fix in the UI, byte for byte", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("");
   await page.getByLabel("Paste hex").fill(fixture("Tessera-EJE-test.txt"));
   await page.getByRole("button", { name: "Load pasted hex" }).click();
   // The editor explains why the original falls back from 10-bit.
@@ -52,7 +52,7 @@ test("reproduces the Tessera fix in the UI, byte for byte", async ({ page }) => 
 });
 
 test("creates an EDID without uploading anything", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("");
   await page.getByRole("button", { name: "Create a new EDID" }).click();
   await fill(page, { Width: "3840", Height: "1080", "Refresh (Hz)": "50" });
   await page.getByLabel("Monitor name (up to 13 characters)").fill("Wall A");
@@ -73,7 +73,7 @@ test("creates an EDID without uploading anything", async ({ page }) => {
 });
 
 test("names the field when a timing does not fit a DTD, and offers DisplayID", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("");
   await page.getByRole("button", { name: "Create a new EDID" }).click();
   await page.getByLabel("Formula").selectOption("manual");
   await fill(page, { "H front porch": "1056", "H sync": "88", "H back porch": "296", "V front porch": "8", "V sync": "10", "V back porch": "72" });
@@ -82,7 +82,7 @@ test("names the field when a timing does not fit a DTD, and offers DisplayID", a
 });
 
 test("creates a 5760x1080 EDID for an LED wall: DisplayID timing, 1080p fallback, EEODB", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("");
   await page.getByRole("button", { name: "Create a new EDID" }).click();
   await fill(page, { Width: "5760", Height: "1080", "Refresh (Hz)": "60" });
   await expect(page.locator(".tresult")).toContainText("DisplayID timing");
@@ -102,14 +102,14 @@ test("creates a 5760x1080 EDID for an LED wall: DisplayID timing, 1080p fallback
 });
 
 test("refuses a raster beyond what DisplayID can hold", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("");
   await page.getByRole("button", { name: "Create a new EDID" }).click();
   await fill(page, { Width: "70000", Height: "1080" });
   await expect(page.locator(".timing .alert")).toContainText("1 to 65536");
 });
 
 test("edits base-block standard timings", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("");
   await page.getByLabel("Paste hex").fill(fixture("Tessera-EJE-test.txt"));
   await page.getByRole("button", { name: "Load pasted hex" }).click();
   await page.getByRole("button", { name: "Standard timings" }).click();
@@ -122,7 +122,7 @@ test("edits base-block standard timings", async ({ page }) => {
 });
 
 test("shows the link budget with the likely driver choice", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("");
   await page.getByLabel("Paste hex").fill(fixture("Tessera-EJE-test.txt"));
   await page.getByRole("button", { name: "Load pasted hex" }).click();
   const budget = page.locator(".linkbudget");
@@ -132,7 +132,7 @@ test("shows the link budget with the likely driver choice", async ({ page }) => 
 });
 
 test("looks up a VESA DMT timing and names the matching VIC", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("");
   await page.getByRole("button", { name: "Create a new EDID" }).click();
   await page.getByLabel("Formula").selectOption("dmt");
   await fill(page, { Width: "1920", Height: "1080", "Refresh (Hz)": "60" });
@@ -142,7 +142,7 @@ test("looks up a VESA DMT timing and names the matching VIC", async ({ page }) =
 });
 
 test("builds a 4K120 HDMI 2.1 EDID that declares FRL", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("");
   await page.getByRole("button", { name: "Create a new EDID" }).click();
   await page.getByRole("combobox", { name: "Link" }).selectOption("hdmi2.1");
   await page.getByLabel("Formula").selectOption("cvt-rb2");
@@ -157,7 +157,7 @@ test("builds a 4K120 HDMI 2.1 EDID that declares FRL", async ({ page }) => {
 });
 
 test("builds a DisplayPort 1.4 EDID: EDID 1.4, depth and interface in the base block", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("");
   await page.getByRole("button", { name: "Create a new EDID" }).click();
   await page.getByRole("combobox", { name: "Link" }).selectOption("dp1.4");
   await page.getByLabel("Formula").selectOption("cvt-rb2");

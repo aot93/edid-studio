@@ -13,6 +13,7 @@
     "cli": "node packages/edidtool/src/cli.ts",
     "dev": "pnpm --filter @edid-studio/web dev",
     "build": "pnpm --filter @edid-studio/web build",
+    "build:offline": "pnpm --filter @edid-studio/web build:offline",
     "e2e": "pnpm --filter @edid-studio/web e2e",
     "rules-doc": "node scripts/gen-rules-doc.ts",
     "edid-decode": "scripts/build-edid-decode.sh"
